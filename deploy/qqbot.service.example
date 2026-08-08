@@ -1,0 +1,19 @@
+[Unit]
+Description=UCAS Guitar Association QQ Room Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qqbot
+Group=qqbot
+WorkingDirectory=/opt/qqbot
+EnvironmentFile=/opt/qqbot/.env
+ExecStart=/opt/qqbot/.venv/bin/python /opt/qqbot/main.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

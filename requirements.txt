@@ -1,0 +1,6 @@
+qq-botpy>=1.2.1
+PyYAML>=6.0.1
+APScheduler>=3.10.4,<4
+aiohttp>=3.9
+Jinja2>=3.1
+playwright>=1.49

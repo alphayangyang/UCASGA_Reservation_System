@@ -1,0 +1,61 @@
+bot_id: zgc
+site_id: site-zgc
+bot_name: 中关村琴房
+
+credentials:
+  appid_env: QQBOT_APPID
+  secret_env: QQBOT_SECRET
+
+database:
+  path: data/zgc/piano_room_zgc.db
+
+rooms:
+  - id: zgc-main
+    name: 中关村琴房
+    aliases: [中关村, 中关村排练室]
+
+default_owner_external_id: ""
+
+roles:
+  levels:
+    user: 0
+    band: 1
+    admin: 2
+    owner: 3
+
+booking:
+  open_time: "07:00"
+  close_time: "23:00"
+  business_day_boundary: "22:00"
+  max_query_offset: 2
+  silent_period:
+    start: "22:00"
+    end: "22:15"
+  advance_offsets:
+    user: 0
+    band: 1
+    admin: 2
+    owner: 2
+  limits:
+    regular_start: "07:00"
+    rush_start: "22:00"
+    regular:
+      max_single_hours: 24
+      max_daily_hours: 24
+    rush:
+      max_single_hours: 1.5
+      max_daily_hours: 1.5
+
+features:
+  advance_booking: true
+  weekly_routine: false
+  broadcast: false
+
+query:
+  max_range_days: 7
+  image_enabled: true
+  default_ranges:
+    user: [0, 0]
+    band: [0, 1]
+    admin: [0, 6]
+    owner: [0, 6]

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+.venv/
+.playwright-browsers/
+*.egg-info/
+.env
+data/
+logs/
+*.log
+botpy.log
+dist/
+*.zip

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: #eef2f7; }
+    body {
+      width: 1240px;
+      padding: 20px;
+      color: #172033;
+      font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+    }
+    #schedule {
+      width: 1200px;
+      padding: 26px 30px 30px;
+      border: 1px solid #dce3ec;
+      border-radius: 20px;
+      background: #ffffff;
+      box-shadow: 0 10px 32px rgba(30, 47, 75, 0.10);
+    }
+    .header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: 27px; line-height: 1.25; }
+    .subtitle { margin-top: 7px; color: #637083; font-size: 15px; }
+    .legend { display: flex; gap: 12px; color: #637083; font-size: 14px; }
+    .legend span::before {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      margin-right: 5px;
+      border-radius: 3px;
+      content: "";
+    }
+    .legend .reservation::before { background: #5774e8; }
+    .legend .routine::before, .legend .lock::before { background: #ef9a45; }
+    .legend .free::before { background: #42b982; }
+    .axis, .row { display: grid; grid-template-columns: 195px 1fr; }
+    .axis { height: 34px; color: #7b8797; font-size: 12px; }
+    .axis-track, .track { position: relative; }
+    .tick {
+      position: absolute;
+      bottom: 5px;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+    .row { min-height: 66px; border-top: 1px solid #e8edf3; }
+    .row-label {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding-right: 16px;
+    }
+    .row-label strong { font-size: 15px; }
+    .row-label span { margin-top: 4px; color: #718096; font-size: 13px; }
+    .track {
+      min-height: 66px;
+      background-image:
+        linear-gradient(to right, rgba(145, 158, 178, .18) 1px, transparent 1px),
+        linear-gradient(to right, rgba(145, 158, 178, .08) 1px, transparent 1px);
+      background-position: left top;
+      background-size: 6.25% 100%, 3.125% 100%;
+    }
+    .block {
+      position: absolute;
+      top: 10px;
+      min-width: 2px;
+      height: 45px;
+      overflow: hidden;
+      padding: 5px 8px;
+      border-radius: 8px;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .block.reservation { background: #5774e8; }
+    .block.routine, .block.lock { background: #ef9a45; }
+    .block.free { background: #42b982; }
+    .block .name {
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 700;
+      text-overflow: ellipsis;
+    }
+    .block .time { margin-top: 2px; font-size: 11px; opacity: .92; }
+    .empty {
+      position: absolute;
+      top: 22px;
+      left: 12px;
+      color: #98a2b3;
+      font-size: 13px;
+    }
+    .footer {
+      margin-top: 18px;
+      color: #8792a2;
+      font-size: 12px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <main id="schedule">
+    <div class="header">
+      <div>
+        <h1>{{ site_name }} · {{ title }}</h1>
+        <div class="subtitle">{{ period }} · 开放 {{ opening }}–{{ closing }}</div>
+      </div>
+      <div class="legend">
+        {% if mode == "schedule" %}
+          <span class="reservation">预约</span>
+          <span class="routine">周常 / 锁定</span>
+        {% else %}
+          <span class="free">可预约</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="axis">
+      <div></div>
+      <div class="axis-track">
+        {% for tick in ticks %}
+          <span class="tick" style="left: {{ tick.left }}%">{{ tick.label }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% for row in rows %}
+      <div class="row">
+        <div class="row-label">
+          <strong>{{ row.date_label }}{% if row.offset is not none %}（+{{ row.offset }}）{% endif %}</strong>
+          <span>{{ row.room }}</span>
+        </div>
+        <div class="track"
+             style="background-size: {{ hour_grid }}% 100%, {{ half_hour_grid }}% 100%">
+          {% if not row.blocks %}
+            <span class="empty">{% if mode == "schedule" %}暂无占用{% else %}无空闲时段{% endif %}</span>
+          {% endif %}
+          {% for block in row.blocks %}
+            <div class="block {{ block.kind }}"
+                 style="left: {{ block.left }}%; width: {{ block.width }}%">
+              <div class="name">{{ block.label }}</div>
+              <div class="time">{{ block.time }}</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+    <div class="footer">半小时为最小预约单位 · 查询生成时间以机器人收到指令为准</div>
+  </main>
+</body>
+</html>

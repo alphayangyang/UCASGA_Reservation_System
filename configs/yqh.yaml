@@ -1,0 +1,64 @@
+bot_id: yqh
+site_id: site-yqh
+bot_name: 雁栖湖琴房
+
+credentials:
+  appid_env: QQBOT_APPID
+  secret_env: QQBOT_SECRET
+
+database:
+  path: data/yqh/piano_room_yqh.db
+
+rooms:
+  - id: yqh-303
+    name: "303"
+    aliases: ["303琴房"]
+  - id: yqh-304a
+    name: "304a"
+    aliases: ["304A", "304a琴房"]
+  - id: yqh-304b
+    name: "304b"
+    aliases: ["304B", "304b琴房"]
+
+default_owner_external_id: ""
+
+roles:
+  levels:
+    user: 0
+    admin: 2
+    owner: 3
+
+booking:
+  open_time: "07:00"
+  close_time: "23:00"
+  business_day_boundary: "22:00"
+  max_query_offset: 2
+  silent_period:
+    start: "22:00"
+    end: "22:15"
+  advance_offsets:
+    user: 0
+    admin: 0
+    owner: 0
+  limits:
+    regular_start: "07:00"
+    rush_start: "22:00"
+    regular:
+      max_single_hours: 24
+      max_daily_hours: 24
+    rush:
+      max_single_hours: 1.5
+      max_daily_hours: 1.5
+
+features:
+  advance_booking: false
+  weekly_routine: true
+  broadcast: true
+
+query:
+  max_range_days: 7
+  image_enabled: true
+  default_ranges:
+    user: [0, 0]
+    admin: [0, 6]
+    owner: [0, 6]

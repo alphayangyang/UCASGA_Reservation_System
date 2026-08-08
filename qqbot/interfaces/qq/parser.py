@@ -1,0 +1,250 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+from qqbot.domain.errors import ParseError
+
+TIME_TOKEN = r"[0-9:.：]+"
+RANGE_RE = re.compile(rf"^(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—]\s*(?P<end>{TIME_TOKEN})\s*$")
+QUERY_DATE_TOKEN = r"(?:\+\d+|\d{4}-\d{2}-\d{2})"
+QUERY_RANGE_RE = re.compile(
+    rf"(?<!\S)(?P<start>{QUERY_DATE_TOKEN})"
+    rf"(?:\s*(?:~|～|至|\.\.)\s*(?P<end>{QUERY_DATE_TOKEN}))?\s*$"
+)
+
+
+@dataclass(frozen=True)
+class ParsedIntent:
+    """Parser 的稳定输出；未来 NLP 也只需产生这个结构。"""
+
+    operation: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+    admin: bool = False
+
+
+def _strip_prefix(text: str) -> tuple[str, bool]:
+    normalized = text.strip()
+    if normalized.startswith("/"):
+        normalized = normalized[1:].strip()
+    admin = normalized.startswith("#")
+    if admin:
+        normalized = normalized[1:].strip()
+    return normalized, admin
+
+
+def _take_offset(value: str) -> tuple[str, int]:
+    match = re.search(r"\s*\+(\d+)\s*$", value)
+    if not match:
+        return value.strip(), 0
+    return value[: match.start()].strip(), int(match.group(1))
+
+
+def _take_date_or_offset(value: str) -> tuple[str, str | None, int]:
+    body, offset = _take_offset(value)
+    date_match = re.search(r"(?:^|\s)(\d{4}-\d{2}-\d{2})\s*$", body)
+    if not date_match:
+        return body, None, offset
+    return body[: date_match.start()].strip(), date_match.group(1), offset
+
+
+def _take_query_range(value: str) -> tuple[str, str | None, str | None]:
+    """取出查询末尾的单日或日期范围；日期语义留给 Resolver。"""
+    match = QUERY_RANGE_RE.search(value)
+    if not match:
+        return value.strip(), None, None
+    start = match.group("start")
+    return value[: match.start()].strip(), start, match.group("end") or start
+
+
+class QQCommandParser:
+    """只理解文字，不访问数据库、时钟或 QQ SDK。"""
+
+    def parse(self, raw_text: str) -> ParsedIntent:
+        text, admin = _strip_prefix(raw_text)
+        if not text:
+            raise ParseError("help")
+
+        action, _, remainder = text.partition(" ")
+        # 兼容“预约303 7-8”一类没有空格的输入。
+        for candidate in (
+            "查询个人",
+            "添加周常",
+            "删除周常",
+            "查询周常",
+            "绑定配置",
+            "添加管理",
+            "删除管理",
+            "转让群主",
+            "清空预约",
+            "撤销清空",
+            "备份用户",
+            "恢复用户",
+            "播报周常",
+            "预约",
+            "取消",
+            "查询",
+            "空闲",
+            "绑定",
+        ):
+            if text.startswith(candidate):
+                action = candidate
+                remainder = text[len(candidate) :].strip()
+                break
+
+        if admin:
+            return self._parse_admin(action, remainder)
+        return self._parse_user(action, remainder)
+
+    def _parse_user(self, action: str, remainder: str) -> ParsedIntent:
+        if action == "绑定":
+            parts = remainder.split()
+            if len(parts) < 2:
+                raise ParseError("bind")
+            return ParsedIntent(
+                "bind_user",
+                {"display_name": "".join(parts[:-1]), "student_id": parts[-1]},
+            )
+
+        if action == "查询个人":
+            if remainder:
+                raise ParseError("personal")
+            return ParsedIntent("query_personal")
+
+        if action in {"查询", "空闲"}:
+            room, range_start, range_end = _take_query_range(remainder)
+            return ParsedIntent(
+                "query_schedule" if action == "查询" else "query_free",
+                {
+                    "room_reference": room or None,
+                    "range_start": range_start,
+                    "range_end": range_end,
+                },
+            )
+
+        if action == "取消":
+            body, offset = _take_offset(remainder)
+            if not body:
+                return ParsedIntent("cancel_reservation", {"offset": offset})
+            match = RANGE_RE.fullmatch(body)
+            if not match:
+                raise ParseError("cancel")
+            return ParsedIntent(
+                "cancel_reservation",
+                {
+                    "room_reference": match.group("room").strip() or None,
+                    "start": match.group("start"),
+                    "end": match.group("end"),
+                    "offset": offset,
+                },
+            )
+
+        if action == "预约":
+            body, offset = _take_offset(remainder)
+            match = RANGE_RE.fullmatch(body)
+            if not match:
+                raise ParseError("reserve")
+            return ParsedIntent(
+                "create_reservation",
+                {
+                    "room_reference": match.group("room").strip() or None,
+                    "start": match.group("start"),
+                    "end": match.group("end"),
+                    "offset": offset,
+                },
+            )
+
+        # 旧指令不再形成第二套业务分支，只给出迁移提示。
+        if action in {"超前查询", "超前取消", "超前预约", "远期预约", "远期取消"}:
+            raise ParseError("deprecated_offset")
+        raise ParseError("help")
+
+    def _parse_admin(self, action: str, remainder: str) -> ParsedIntent:
+        if action == "绑定配置":
+            if not remainder or len(remainder.split()) != 1:
+                raise ParseError("bind_config")
+            return ParsedIntent("bind_config", {"bot_id": remainder}, True)
+
+        if action in {"备份用户", "恢复用户", "播报周常"}:
+            if remainder:
+                raise ParseError(action)
+            operation = {
+                "备份用户": "backup_users",
+                "恢复用户": "restore_users",
+                "播报周常": "broadcast_routines",
+            }[action]
+            return ParsedIntent(operation, admin=True)
+
+        if action in {"添加管理", "删除管理", "转让群主"}:
+            parts = remainder.split()
+            if not parts:
+                raise ParseError("role")
+            if action != "添加管理" and len(parts) != 1:
+                raise ParseError("role")
+            return ParsedIntent(
+                {"添加管理": "assign_role", "删除管理": "remove_role", "转让群主": "transfer_owner"}[action],
+                {"target_name": parts[0], "role": parts[1] if len(parts) > 1 else None},
+                True,
+            )
+
+        if action in {"清空预约", "撤销清空"}:
+            body, absolute_date, offset = _take_date_or_offset(remainder)
+            if body:
+                raise ParseError("clear")
+            return ParsedIntent(
+                "clear_reservations" if action == "清空预约" else "undo_clear",
+                {"date": absolute_date, "offset": offset},
+                True,
+            )
+
+        if action == "查询":
+            parts = remainder.split()
+            if not parts:
+                raise ParseError("admin_query")
+            absolute_date = parts[0]
+            room = " ".join(parts[1:]) or None
+            return ParsedIntent("admin_query", {"date": absolute_date, "room_reference": room}, True)
+
+        if action == "取消":
+            body, absolute_date, offset = _take_date_or_offset(remainder)
+            match = RANGE_RE.fullmatch(body)
+            if not match:
+                raise ParseError("admin_cancel")
+            return ParsedIntent(
+                "admin_cancel",
+                {
+                    "room_reference": match.group("room").strip() or None,
+                    "start": match.group("start"),
+                    "end": match.group("end"),
+                    "date": absolute_date,
+                    "offset": offset,
+                },
+                True,
+            )
+
+        if action in {"添加周常", "删除周常"}:
+            match = re.fullmatch(
+                rf"(周[一二三四五六日天]|[1-7])\s+(.+?)\s+({TIME_TOKEN})\s*[-~～—]\s*({TIME_TOKEN})(?:\s+(.+))?",
+                remainder,
+            )
+            if not match:
+                raise ParseError("routine")
+            return ParsedIntent(
+                "add_routine" if action == "添加周常" else "remove_routine",
+                {
+                    "weekday": match.group(1),
+                    "room_reference": match.group(2).strip(),
+                    "start": match.group(3),
+                    "end": match.group(4),
+                    "purpose": (match.group(5) or "常规占用").strip(),
+                },
+                True,
+            )
+
+        if action == "查询周常":
+            if remainder and not re.fullmatch(r"周[一二三四五六日天]|[1-7]", remainder):
+                raise ParseError("routine_query")
+            return ParsedIntent("list_routines", {"weekday": remainder or None}, True)
+
+        raise ParseError("admin_help")
