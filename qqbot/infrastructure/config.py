@@ -207,7 +207,9 @@ def load_site_config(path: str | Path, project_root: str | Path | None = None) -
             default_ranges=default_ranges,
             image_enabled=bool(query_raw.get("image_enabled", True)),
         ),
-        default_owner_external_id=str(raw.get("default_owner_external_id", "")),
+        default_owner_external_id=os.getenv(
+            "QQBOT_OWNER_EXTERNAL_ID", str(raw.get("default_owner_external_id", ""))
+        ),
         appid=os.getenv(appid_env, credentials.get("appid", "")),
         secret=os.getenv(secret_env, credentials.get("secret", "")),
         max_query_offset=int(booking.get("max_query_offset", 2)),

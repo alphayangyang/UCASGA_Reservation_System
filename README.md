@@ -97,6 +97,7 @@ cp .env.example .env
 ```dotenv
 QQBOT_APPID=你的AppID
 QQBOT_SECRET=你的AppSecret
+QQBOT_OWNER_EXTERNAL_ID=群主QQ的member_openid（初始 owner；本地填写，不要提交到仓库）
 PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers
 ```
 
