@@ -12,13 +12,13 @@ database:
 rooms:
   - id: yqh-303
     name: "303"
-    aliases: ["303琴房"]
+    aliases: ["303琴房", "三零三", "三百零三"]
   - id: yqh-304a
     name: "304a"
-    aliases: ["304A", "304a琴房"]
+    aliases: ["304A", "304a琴房", "三零四A"]
   - id: yqh-304b
     name: "304b"
-    aliases: ["304B", "304b琴房"]
+    aliases: ["304B", "304b琴房", "三零四B"]
 
 # 群主 QQ member_openid：可填在此处，或设置环境变量 QQBOT_OWNER_EXTERNAL_ID（推荐放 .env，勿提交到仓库）。
 default_owner_external_id: ""
@@ -55,6 +55,7 @@ features:
   advance_booking: false
   weekly_routine: true
   broadcast: true
+  nlu_enabled: false
 
 query:
   max_range_days: 7

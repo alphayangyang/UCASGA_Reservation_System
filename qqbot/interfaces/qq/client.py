@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -20,9 +22,27 @@ from qqbot.infrastructure.sqlite_repository import SQLiteBookingRepository
 from qqbot.interfaces.qq.media_uploader import QQMediaUploader
 from qqbot.interfaces.qq.parser import ParsedIntent, QQCommandParser
 from qqbot.interfaces.qq.presenter import QQPresenter
+from qqbot.nlu import NLU_DATA_DIR, NLUIntentMatcher, mask_sensitive, run_nightly_job, write_pending
 from qqbot.presentation.timeline import ScheduleImageRenderer
 
 logger = logging.getLogger(__name__)
+
+
+def _merge_extra_aliases(config: SiteConfig, extra: dict[str, str]) -> SiteConfig:
+    """把白名单补充源（{"别名原文": "room_id"}）合并进对应房间的 aliases。
+
+    使 Resolver.room_by_reference 能解析生长别名（RoomConfig 只认 name+aliases）。
+    无补充/room_id 不匹配 → 原样返回；dataclasses.replace 保持不可变语义。
+    """
+    if not extra:
+        return config
+    from dataclasses import replace
+
+    rooms = []
+    for room in config.rooms:
+        added = tuple(alias for alias, room_id in extra.items() if room_id == room.id)
+        rooms.append(replace(room, aliases=(*room.aliases, *added)) if added else room)
+    return replace(config, rooms=tuple(rooms))
 
 
 class PianoBotClient(botpy.Client):
@@ -34,6 +54,19 @@ class PianoBotClient(botpy.Client):
         renderers: dict[str, ScheduleImageRenderer] | None = None,
     ) -> None:
         super().__init__(intents=intents or botpy.Intents.default())
+        # 房间白名单补充源（v2：{"站点": {"别名原文": "room_id"}}）先合并进 configs——
+        # 让 Resolver.room_by_reference 能解析生长别名（room_by_reference 只认配置 aliases）。
+        whitelist_path = NLU_DATA_DIR / "room_whitelist.json"
+        try:
+            whitelist = json.loads(whitelist_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.warning("房间白名单文件不可读（%s），仅使用配置权威源", whitelist_path)
+            whitelist = {}
+        extra_aliases = whitelist.get("extra_aliases", {}) if isinstance(whitelist, dict) else {}
+        configs = {
+            bot_id: _merge_extra_aliases(config, extra_aliases.get(bot_id, {}))
+            for bot_id, config in configs.items()
+        }
         self.configs = configs
         self.repositories = {bot_id: SQLiteBookingRepository(config) for bot_id, config in configs.items()}
         for repository in self.repositories.values():
@@ -57,7 +90,45 @@ class PianoBotClient(botpy.Client):
         imported = self.group_bindings.import_legacy_json(control_db.parent.parent / "group_mappings.json")
         if imported:
             logger.info("已从旧 group_mappings.json 导入 %s 条群绑定", imported)
-        self.parser = QQCommandParser()
+        # Phase 1：NLU 数据收集（docs/NLU-DESIGN.md 5.2/5.4）。
+        # 插件私有数据目录（qqbot/nlu/data，不混入 data/ 业务库）；api_key 缺失不挂夜间任务。
+        # 注意：必须在构造 NLUIntentMatcher 之前初始化（model_path 依赖它）。
+        self._nlu_dir = NLU_DATA_DIR
+        self._deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "")
+        # NLU 为实验性功能：任一站点配置 features.nlu_enabled 即启用（共享 parser）。
+        # Phase 2：intent_model.json 存在时自动挂载 ML 兜底通道（懒加载，损坏自动关闭）。
+        # 称呼前缀：bot 昵称（小泉）+ 各站点 bot_name（「玉泉路琴房帮我约…」）。
+        # 房间白名单（gazetteer）：权威源 = 全部站点房间 name+aliases 并集，
+        # 补充源 = room_whitelist.json 的 extra_aliases 别名原文（keys）——
+        # 上述 _merge_extra_aliases 已把 room_id 映射合并进 configs（Resolver 可解析）。
+        # 跨站别名由 Resolver.room_by_reference 按站点兜底（本站不存在 → 安全提示）。
+        room_aliases = tuple(
+            alias
+            for config in configs.values()
+            for room in config.rooms
+            for alias in (room.name, *room.aliases)
+        )
+        room_aliases = (
+            *room_aliases,
+            *(alias for site_extra in extra_aliases.values() for alias in site_extra),
+        )
+        # 闲聊关键词补充（自优化生长产物 chitchat_keywords.json；缺失/损坏不影响启动）
+        try:
+            chitchat_data = json.loads((NLU_DATA_DIR / "chitchat_keywords.json").read_text(encoding="utf-8"))
+            chitchat_keywords = tuple(chitchat_data.get("keywords", []))
+        except (OSError, ValueError):
+            chitchat_keywords = ()
+        nlu = (
+            NLUIntentMatcher(
+                model_path=self._nlu_dir / "intent_model.json",
+                name_prefixes=tuple(config.bot_name for config in configs.values()),
+                room_aliases=room_aliases,
+                chitchat_keywords=chitchat_keywords,
+            )
+            if any(config.features.nlu_enabled for config in configs.values())
+            else None
+        )
+        self.parser = QQCommandParser(nlu=nlu)
         self.resolver = CommandResolver()
         self.scheduler: AsyncIOScheduler | None = None
 
@@ -78,6 +149,18 @@ class PianoBotClient(botpy.Client):
                 id="daily_cleanup",
                 replace_existing=True,
             )
+            # 夜间 LLM 批处理标注（文档 5.4）：与归档并列，04:30 错开执行。
+            # 任务逻辑在 qqbot/nlu/annotate.py（run_nightly_job），client 只负责挂载。
+            if self._deepseek_api_key:
+                self.scheduler.add_job(
+                    run_nightly_job,
+                    "cron",
+                    hour=4,
+                    minute=30,
+                    args=[self._nlu_dir, self.configs, self._deepseek_api_key],
+                    id="nlu_nightly_annotate",
+                    replace_existing=True,
+                )
             self.scheduler.start()
 
     async def close(self) -> None:
@@ -181,6 +264,10 @@ class PianoBotClient(botpy.Client):
             normalized = raw_text.lstrip("/").lstrip()
             if not normalized.startswith("#") and config.is_silent(minute):
                 return
+            # Phase 1：解析失败的普通输入进入 pending（夜间 LLM 标注的数据源）。
+            # 收集逻辑（脱敏、复合指令过滤）在 qqbot/nlu/annotate.py 的 write_pending 内封装。
+            if not normalized.startswith("#"):
+                write_pending(self._nlu_dir, normalized, bot_id)
             result = OperationResult.failure(exc.code, **exc.details)
             await self._send(message, self.presenters[bot_id].render(result))
             return
@@ -233,10 +320,21 @@ class PianoBotClient(botpy.Client):
             intent.operation,
             result.code,
         )
+        # Phase 1 数据收集：脱敏后的样本行（docs/NLU-DESIGN.md 5.2），供 scripts/collect_samples.py 汇总。
+        logger.debug(
+            "nlu_sample text=%s operation=%s result=%s",
+            mask_sensitive(raw_text),
+            intent.operation,
+            result.code,
+        )
 
         # 抢单静默期仍执行预约，但不在群内刷屏。
         if not intent.admin and config.is_silent(local_minute) and intent.operation == "create_reservation":
             return
+        # NLU 降级提示：查询被降级（多房间/多日期无法理解）时先单独发一条提醒，
+        # 再发送正常结果（图片或文字），保证用户知道「没完全听懂」。
+        if intent.hint and result.ok:
+            await self._send(message, intent.hint)
         await self._send_result(message, bot_id, result, context.request_id)
 
 

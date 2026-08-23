@@ -13,3 +13,4 @@ logs/
 botpy.log
 dist/
 *.zip
+qqbot/nlu/data/

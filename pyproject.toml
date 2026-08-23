@@ -37,6 +37,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

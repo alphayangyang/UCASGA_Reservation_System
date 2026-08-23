@@ -11,6 +11,7 @@ from qqbot.domain.commands import (
     BackupUsers,
     BindUser,
     BroadcastRoutines,
+    CancelAllReservations,
     CancelReservation,
     ClearReservations,
     Command,
@@ -118,6 +119,15 @@ class BookingApplication:
                 room_name=self._room_name(command.room_id),
                 requested=command.time_range,
                 fragments=fragments,
+            )
+
+        if isinstance(command, CancelAllReservations):
+            slots = self.repository.cancel_all_user(
+                actor_id, self.calendar.business_date(context.received_at)
+            )
+            return OperationResult.success(
+                "all_reservations_cancelled" if slots else "nothing_to_cancel",
+                slots=slots,
             )
 
         if isinstance(command, CancelReservation):

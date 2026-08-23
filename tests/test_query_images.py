@@ -157,3 +157,50 @@ def test_qq_chunk_upload_follows_official_flow() -> None:
     finishes = [call[3] for call in api._http.calls[1:4]]
     assert [item["block_size"] for item in finishes] == ["4", "4", "2"]
     assert [item["part_index"] for item in finishes] == [0, 1, 2]
+
+
+def test_qq_chunk_upload_server_index_starts_at_one() -> None:
+    """手册 25.1：服务端 part_index 从 1 开始也必须正确切片（曾跳过首块、末片越界）。
+
+    协议编号原样回传 part_finish；本地用独立 cursor 切片。
+    """
+
+    class OneIndexedFakeHTTP(FakeHTTP):
+        async def request(self, route, **kwargs):
+            payload = kwargs["json"]
+            self.calls.append((route.method, route.path, route.url, payload))
+            if route.path.endswith("/upload_prepare"):
+                return {
+                    "upload_id": "upload-1",
+                    "block_size": "4",
+                    "parts": [
+                        {"index": 1, "presigned_url": "https://upload.invalid/1", "block_size": "4"},
+                        {"index": 2, "presigned_url": "https://upload.invalid/2", "block_size": "4"},
+                        {"index": 3, "presigned_url": "https://upload.invalid/3", "block_size": "2"},
+                    ],
+                    "upload_config": {"retry_delay": 0},
+                }
+            if route.path.endswith("/files"):
+                return {"file_info": "opaque-file-info", "ttl": 300}
+            return {}
+
+    class OneIndexedAPI:
+        def __init__(self) -> None:
+            self._http = OneIndexedFakeHTTP()
+
+    content = b"abcdefghij"
+    uploaded: list[tuple[str, bytes, int]] = []
+
+    async def put_part(url: str, chunk: bytes, retry_delay: int) -> None:
+        uploaded.append((url, chunk, retry_delay))
+
+    api = OneIndexedAPI()
+    media = asyncio.run(
+        QQMediaUploader(api, put_part=put_part).upload_image("group-1", content, "schedule.png")
+    )
+
+    assert media == {"file_info": "opaque-file-info"}
+    # 本地切片仍然从头开始、完整覆盖（不因服务端编号偏移而跳块）
+    assert [item[1] for item in uploaded] == [b"abcd", b"efgh", b"ij"]
+    finishes = [call[3] for call in api._http.calls[1:4]]
+    assert [item["part_index"] for item in finishes] == [1, 2, 3]  # 协议编号原样回传

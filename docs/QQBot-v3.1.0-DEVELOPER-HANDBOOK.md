@@ -65,7 +65,7 @@
 ### 1.2 当前不负责什么
 
 - 没有 Web API 或管理网站；
-- 没有 NLP Parser，但 `ParsedIntent` 是未来 NLP 的接入点；
+- NLP 为**实验性可选模块**（`qqbot/nlu/` 可插拔子包，默认关闭，见第 33 节），`ParsedIntent` 是它的接入点；
 - 没有通用消息队列、Redis 或远程数据库；
 - 没有对 `app_locked_slots` 的新增/删除指令，当前只会读取或迁移锁定时段；
 - `app_audit_log` 已建表但当前代码没有写入；
@@ -80,7 +80,7 @@
 ```mermaid
 flowchart TD
     QQ["QQ 群消息"] --> Client["QQ Client"]
-    Client --> Parser["QQCommandParser"]
+    Client --> Parser["QQCommandParser<br/>(正则 → NLU 可选)"]
     Parser --> Intent["ParsedIntent"]
     Intent --> Resolver["CommandResolver"]
     Resolver --> Command["Domain Command"]
@@ -93,6 +93,7 @@ flowchart TD
     Image --> Upload["QQMediaUploader"]
     Presenter --> Client
     Upload --> Client
+    NLU["qqbot/nlu/<br/>规则引擎 + ML + 夜间 LLM 标注<br/>(可插拔，默认关闭)"] -.可选.-> Parser
 ```
 
 允许的核心依赖关系：
@@ -135,16 +136,26 @@ QQBot-v3.1/
 │   │   ├── group_bindings.py            # 群 → bot_id
 │   │   └── sqlite_repository.py         # Schema、迁移与事务实现
 │   ├── interfaces/qq/
-│   │   ├── parser.py                    # 文本 → ParsedIntent
+│   │   ├── parser.py                    # 文本 → ParsedIntent（可注入 NLU fallback）
 │   │   ├── presenter.py                 # Result → 中文文字
 │   │   ├── media_uploader.py            # QQ 富媒体分片上传
 │   │   └── client.py                    # QQ 生命周期和总编排
+│   ├── nlu/                             # NLP 可插拔子包（实验性，默认关闭，见第 33 节）
+│   │   ├── __init__.py                  # 公共导出（挂载点）
+│   │   ├── matcher.py                   # 规则引擎（模板→关键词→ML 三通道）
+│   │   ├── classifier.py                # 零依赖朴素贝叶斯（字符 n-gram，JSON 模型）
+│   │   ├── llm.py                       # DeepSeek 调用/脱敏/一致性投票
+│   │   └── annotate.py                  # 夜间批处理编排（pending→投票→校验→候选库）
 │   └── presentation/
 │       ├── timeline.py                  # 时间轴 ViewModel 与 Playwright
 │       └── templates/schedule.html.jinja
 ├── scripts/
 │   ├── migrate.py                       # v2 → v3 迁移入口
-│   └── doctor.py                        # 只读健康检查
+│   ├── doctor.py                        # 只读健康检查
+│   ├── bench_nlu.py                     # NLU 本地模拟与性能基准
+│   ├── train_intent.py                  # NLU Phase 2 训练（交叉验证 + 阈值扫描）
+│   ├── collect_samples.py               # NLU 日志样本收集
+│   └── nightly_annotate.py              # 夜间 LLM 批处理标注 CLI（--dry-run 本地模拟）
 ├── deploy/qqbot.service.example         # systemd 示例
 ├── tests/                               # 领域、应用、Repository、QQ 测试
 ├── pyproject.toml
@@ -479,7 +490,7 @@ ParsedIntent(
 )
 ```
 
-这是规则 Parser、未来 NLP Parser 和未来 Web 表单解析器之间的稳定中间协议。
+这是规则 Parser、NLU 模块（`qqbot/nlu/`，见第 33 节）和未来 Web 表单解析器之间的稳定中间协议。
 
 ### 10.2 `QQCommandParser.parse(raw_text)`
 
@@ -828,6 +839,8 @@ group_bindings(
 | `QQBOT_APPID` | 是 | QQ Bot AppID |
 | `QQBOT_SECRET` | 是 | QQ Bot Secret |
 | `PLAYWRIGHT_BROWSERS_PATH` | 推荐 | Chromium 安装路径；安装和运行必须一致 |
+| `DEEPSEEK_API_KEY` | NLU 夜间标注时 | DeepSeek API Key；缺失则不挂载 04:30 夜间标注任务（见第 33 节） |
+| `DEEPSEEK_MODEL` | 否 | 夜间标注模型名，默认 `deepseek-chat`（非思考模式，见第 33 节） |
 
 `.env` 不会由程序自动加载。
 
@@ -844,7 +857,7 @@ group_bindings(
 | `default_owner_external_id` | 初始 owner 的 QQ 外部 ID |
 | `roles.levels` | 角色与整数等级 |
 | `booking.*` | 开放时间、业务日、偏移、静默、时长 |
-| `features.*` | advance/routine/broadcast 开关 |
+| `features.*` | advance/routine/broadcast/nlu_enabled 开关（nlu_enabled 见第 33 节） |
 | `query.*` | 最大天数、图片、按角色缺省范围 |
 
 ### 16.3 房间配置
@@ -1342,27 +1355,20 @@ async close() -> None
 
 ## 25. v3.1.0 已知问题与技术债
 
-### 25.1 QQ 分片编号假定从 0 开始（高优先级）
+### 25.1 QQ 分片编号假定从 0 开始（✅ 已修复 2026-08-23）
 
-v3.1.0 使用：
+**原问题**：v3.1.0 使用 `start = part_index * block_size` 本地切片——服务端返回 `1,2,3...` 时跳过首块、末片报“超出文件范围”（生产实测：`RuntimeError: QQ 富媒体分片 1 超出文件范围`）。
 
-```python
-start = part_index * block_size
-chunk = content[start:start + expected_size]
-```
-
-这只适用于服务端返回 `0,1,2...`。真实 QQ 接口也可能返回 `1,2,3...`，此时会跳过第一个文件块，并在末片出现“超出文件范围”。
-
-安全修复原则：
+**修复（已按以下原则落地到 `media_uploader.py`）**：
 
 - 服务端 `part_index` 只作为 part_finish 的协议编号原样回传；
 - 本地切片位置使用独立的顺序 `cursor`；
 - 每片按服务端给出的 expected size 从 cursor 切取；
 - 上传后推进 cursor；
-- 最后验证 cursor 等于文件长度；
-- 测试同时覆盖 `[0,1,2]` 与 `[1,2,3]`。
+- 最后验证 cursor 等于文件长度（不一致报“字节数不完整”）；
+- 测试同时覆盖 `[0,1,2]` 与 `[1,2,3]`（`tests/test_query_images.py`）。
 
-这是 v3.1.1 的核心修复点。若生产图片发送正常，也不应删除该风险记录。
+**诊断线索**：日志出现 `QQ 富媒体分片 N 超出文件范围`（N 为服务端编号）即此问题；修复后图片查询不再回退文字。
 
 ### 25.2 每站点常驻一个 Chromium（中优先级）
 
@@ -1672,7 +1678,8 @@ env | grep '^QQBOT_'
 
 | 模块 | 接口 | 返回/说明 |
 | --- | --- | --- |
-| `interfaces.qq.parser` | `QQCommandParser.parse(raw_text)` | `ParsedIntent` 或 `ParseError` |
+| `interfaces.qq.parser` | `QQCommandParser(nlu=None)` | `ParsedIntent` 或 `ParseError`；`nlu` 为可选注入的 NLU 规则引擎 |
+|  | `ParsedIntent(operation, arguments, admin)` | 规则 Parser 与 NLU 共用的稳定中间协议 |
 | `interfaces.qq.presenter` | `QQPresenter.render(result)` | QQ 中文文本 |
 |  | `QQPresenter.usage(key, details?)` | 格式帮助文本 |
 | `interfaces.qq.media_uploader` | `QQMediaUploader.upload_image(group_openid, content, file_name)` | `{file_info}` |
@@ -1695,10 +1702,122 @@ env | grep '^QQBOT_'
 |  | `ScheduleImageRenderer.render(result)` | PNG bytes |
 |  | `ScheduleImageRenderer.close()` | 关闭 Browser/Playwright |
 
-### 32.6 运维入口
+### 32.6 NLU（实验性，见第 33 节）
+
+| 模块 | 接口 | 返回/说明 |
+| --- | --- | --- |
+| `nlu` | `NLUIntentMatcher(classifier=None, model_path=None)` | 规则引擎 + ML 兜底三通道；`match(text)` → `ParsedIntent \| None`（fail-closed） |
+|  | `NaiveBayesClassifier.fit/save/load/predict` | 零依赖朴素贝叶斯；JSON 序列化 |
+|  | `mask_sensitive(text)` | 学号打码（`\d{4}[A-Z]\d{10}` / `\d{15}` → `***`） |
+|  | `annotate_with_consensus(caller, text, votes, max_rounds)` | 一致性投票（x 次一致 / y 轮重试） |
+|  | `deepseek_caller(session, api_key)` | DeepSeek API 调用器（仅离线标注） |
+|  | `run_nightly_annotate(data_dir, configs, caller)` | 夜间批处理主流程（pending→校验→候选库/异常/日报） |
+
+### 32.7 运维入口
 
 | 模块 | 接口 | 作用 |
 | --- | --- | --- |
 | `main` | `configure_logging(root)` | 控制台 + 按日轮转文件日志 |
 | `scripts.migrate` | `main()` | 备份并执行 v2 → v3 迁移 |
 | `scripts.doctor` | `main()` | 只读配置/数据库健康检查 |
+| `scripts.train_intent` | `main()` | NLU 训练：合并样本 → 分层打乱交叉验证 → 阈值扫描 → 导出 JSON 模型 |
+| `scripts.bench_nlu` | `main()` | NLU 本地模拟与性能基准（`--force-ml` 极端测试 / `--compare` 三方对比） |
+| `scripts.nightly_annotate` | `main()` | 夜间 LLM 标注 CLI（`--dry-run` 本地模拟） |
+| `scripts.collect_samples` | `main()` | 日志 `nlu_sample` 行 → `qqbot/nlu/data/samples.jsonl` |
+
+---
+
+## 33. NLU 实验功能（可插拔子包）
+
+> 对应设计文档：`docs/NLU-DESIGN.md`（方案、防幻觉、验收标准全量记录）。
+
+### 33.1 定位与挂载点
+
+NLP 理解用户口语化表达，作为**可插拔子包** `qqbot/nlu/` 存在，默认关闭。核心系统只通过三个挂载点与其交互，任一点关闭都不影响原有功能：
+
+1. **构造注入**：`QQCommandParser(nlu=...)`——`nlu=None` 时规则引擎完全不存在（正则路径与旧版逐字节一致）；
+2. **YAML 开关**：任一站点 `features.nlu_enabled: true` 即启用共享 NLU（parser 是共享单例）；
+3. **环境变量**：`DEEPSEEK_API_KEY` 缺失则不挂载 04:30 夜间 LLM 标注任务。
+
+### 33.2 解析通道（三通道漏斗）
+
+```
+用户输入 → 称呼前缀剥离（「小泉，」「玉泉路琴房帮我…」）
+         → ① 正则 parser（现有，零改动）
+         → ② NLU 规则引擎（句式模板 → 关键词评分；内护栏：复合/他人/多日期多房间暂留防半执行）
+         → ③ ML 朴素贝叶斯（懒加载 intent_model.json，只出意图；predict=unsupported → 拒绝）
+         → 失败 → 可爱化 fail-closed（见下）
+```
+> 2026-08-23 起：parser 前置拦截已移除（移交 ML 策略）；复合/他人/多日期由夜间 LLM
+> 标注为 `unsupported` 类样本，训练吸收后 ML 学会拒绝，启发式护栏逐步退役。
+
+- admin（`#` 开头）**永不进入 NLU**（硬隔离）；
+- ML 只分类意图，槽位（房间/时间/日期）永远由本地规则抽取并过 Resolver 校验；
+- 短文本（≤6 字符）置信门槛 0.9、普通门槛 0.6（扫描最优），拦截闲聊幻觉；
+- 模型文件缺失/损坏时 ML 通道静默关闭，规则引擎照常工作。
+
+**可爱化 fail-closed**（`QQPresenter.usage` 文案，docs/NLU-DESIGN.md 4.7）：
+
+| 输入性质 | 回复 |
+| --- | --- |
+| 闲聊（在吗/哈哈/天气…） | 「再玩小泉要坏啦QwQ 💦」 |
+| 复合指令 / 写入类多日期多房间 | 「❌ 小泉还不支持这样的指令哦」 |
+| 涉及他人（取消张三预约） | 「❌ 小泉不能帮你操作别人的预约哦」 |
+| 非命令自然语言 | 「对不起，小泉现在还不能听懂哦」+ 指令引导 |
+| 像命令但缺槽位（预约 303） | 保留原格式指导（教育价值优先） |
+| 查询类多日期/多房间/他人 | **降级**：房间缺省 / 日期转自然日范围 + 结果前发 `hint` 提醒 |
+
+**自然日语义**（产品决策 2026-08-22，docs/NLU-DESIGN.md 3.5）：日期词（今天/明天/后天…）按**自然日**理解——NLU 输出 `natural_date`，Resolver 按 `config.business_boundary` 换算业务偏移（22:00 后「明天」= 业务日 `+0`）；22:00 后说「今天」→ `natural_past` 提示；显式 `+N` 保持业务日语义。
+
+**语音转文字**：数字朗读房间（三零三/三百零三）由 NLU 提取原文、**配置 aliases 归一化**（如 `aliases: [..., "三零三"]`）；中文数字时间（上午八点/两点到三点半）原生支持；无标点复合由多日期/整句意图检测兜底。
+
+### 33.3 数据目录（全部 gitignore，不随代码走）
+
+| 路径 | 内容 |
+| --- | --- |
+| `qqbot/nlu/data/seed_samples.jsonl` | 冷启动种子（288 条，合成口语化样本，source=seed） |
+| `qqbot/nlu/data/samples.jsonl` | 真实日志样本（source=real，`scripts/collect_samples.py` 汇总） |
+| `qqbot/nlu/data/pending/` | 解析失败的普通输入（实时写入，学号已打码） |
+| `qqbot/nlu/data/candidates.jsonl` | 夜间 LLM 一致性通过 + Resolver 校验的候选样本（source=llm） |
+| `qqbot/nlu/data/anomalies.jsonl` | 一致性失败/校验失败的异常数据（不丢，供分析） |
+| `qqbot/nlu/data/reports/YYYY-MM-DD.md` | 夜间标注日报 |
+| `qqbot/nlu/data/intent_model.json` | 训练产物（61 KB，JSON 非 pickle） |
+
+**部署注意**：这些文件在开发机生成、服务器 gitignore——服务器首次部署需从开发机拷贝 `qqbot/nlu/data/`（种子 + 模型），之后训练在服务器上进行。
+
+### 33.4 夜间 LLM 标注（04:30，与 04:00 归档并列）
+
+流程：`pending/` → 去重 → 脱敏 → 一致性投票（x=3 次一致，y=5 轮重试）→ Resolver 校验（房间/时间/日期）→ 候选库/异常/日报。LLM 永不进入实时链路；产物只进候选库，不影响线上行为。
+
+- **LLM 必须能说「解析不了」**：无法判断意图时输出 `{"operation": null, "reason": "..."}`（reason 不参与一致性比较），进异常库（`no_operation` + `llm_reason`），供补规则/调 prompt；
+- 日报 `reports/YYYY-MM-DD.md` 仅在当天有 pending 时生成（~1KB/天，按日期覆盖）；`candidates/anomalies.jsonl` 长期 append 累积（Phase 2 训练水源）；
+- 模型默认 `deepseek-v4-flash`（V4 系列；旧名 `deepseek-chat`/`deepseek-reasoner` 已于 2026-07-24 停用，官方迁移到 v4-flash/v4-pro）。可用 `DEEPSEEK_MODEL` 覆盖；
+- **必须显式关闭思考模式**（请求体带 `{"thinking": {"type": "disabled"}}`）：V4 思考模式默认打开且此时 `temperature` 不生效——关闭后 `temperature=0` 才保证一致性投票的稳定输出；
+- JSON 输出用 `response_format={"type": "json_object"}`，prompt 须含「json」字样（system prompt 已满足）。
+
+### 33.5 训练与评估（在服务器上）
+
+```bash
+.venv/bin/python -m scripts.train_intent          # 训练 + 交叉验证 + 阈值扫描 + 导出
+.venv/bin/python -m scripts.bench_nlu             # 性能基准
+.venv/bin/python -m scripts.bench_nlu --force-ml  # ML 单独极端测试
+.venv/bin/python -m scripts.bench_nlu --compare   # 三方对比
+```
+
+- 验收标准：**每类 recall ≥ 0.9**（当前 288 条种子实测：总体 97.3%、宏 F1 97.9%、阈值 0.6）；
+- 交叉验证必须**分层打乱**（同类样本相邻会泄漏虚高）；
+- 模型为纯 Python 零依赖朴素贝叶斯（字符 n-gram 1-2 + DF 筛选 + 拉普拉斯平滑），JSON 序列化（无 pickle 反序列化风险）；
+- 实测推理 ~9.5µs/条（≈10 万条/秒），懒加载内存 <10MB。
+
+### 33.6 启用 / 回滚
+
+```
+启用：configs/*.yaml 任一站点的 features.nlu_enabled: true → 重启
+回滚：改回 false 重启（<1 分钟）；或删除/改名 qqbot/nlu/data/intent_model.json（ML 通道关闭，规则引擎照常）
+```
+
+### 33.7 与手册约束的关系
+
+- Parser/NLU 均不读数据库、不读当前时间、不判断权限（NLU 只做文本→ParsedIntent 的纯词法转换）；
+- 学号脱敏为硬约束：pending 写入即打码，日志 `nlu_sample` 行同样脱敏；
+- `DEEPSEEK_API_KEY` 与手册 22.5 红线一致：永不写入日志。

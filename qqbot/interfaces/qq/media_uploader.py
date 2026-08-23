@@ -113,13 +113,16 @@ class QQMediaUploader:
         upload_config = prepare.get("upload_config") or {}
         retry_delay = min(10, max(0, int(upload_config.get("retry_delay", 1))))
         parts = prepare.get("parts") or []
+        # 手册 25.1：服务端 part_index 只作协议编号原样回传 part_finish；
+        # 本地切片位置用独立 cursor——兼容服务端 index 从 0 或 1 开始（曾跳过首块、末片越界）。
+        cursor = 0
         for part in sorted(parts, key=lambda item: int(item["index"])):
             part_index = int(part["index"])
-            start = part_index * block_size
             expected_size = int(part.get("block_size") or block_size)
-            chunk = content[start : start + expected_size]
+            chunk = content[cursor : cursor + expected_size]
             if not chunk:
                 raise RuntimeError(f"QQ 富媒体分片 {part_index} 超出文件范围")
+            cursor += len(chunk)
             presigned_url = str(part.get("presigned_url") or "")
             if not presigned_url:
                 raise RuntimeError(f"QQ 富媒体分片 {part_index} 缺少上传地址")
@@ -136,6 +139,9 @@ class QQMediaUploader:
                     "md5": self._md5(chunk),
                 },
             )
+
+        if cursor != len(content):
+            raise RuntimeError("QQ 分片上传字节数不完整（服务端分片表与文件长度不一致）")
 
         merged = await self._request(
             "POST",

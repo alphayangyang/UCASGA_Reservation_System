@@ -57,6 +57,12 @@ class FeatureConfig:
     advance_booking: bool = False
     weekly_routine: bool = False
     broadcast: bool = False
+    nlu_enabled: bool = False
+    # NLU 自优化独立开关（任一站点开启即全局生效，与 nlu_enabled 同模式）：
+    # nlu_auto_optimize —— 白名单自优化（房间别名 + 闲聊词，scripts/optimize_whitelist.py）
+    # nlu_auto_retrain  —— ML 意图模型自动重训（影子验证 + 原子替换，scripts/train_intent.py --auto）
+    nlu_auto_optimize: bool = False
+    nlu_auto_retrain: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,6 +207,9 @@ def load_site_config(path: str | Path, project_root: str | Path | None = None) -
             advance_booking=bool(features_raw.get("advance_booking", False)),
             weekly_routine=bool(features_raw.get("weekly_routine", False)),
             broadcast=bool(features_raw.get("broadcast", False)),
+            nlu_enabled=bool(features_raw.get("nlu_enabled", False)),
+            nlu_auto_optimize=bool(features_raw.get("nlu_auto_optimize", False)),
+            nlu_auto_retrain=bool(features_raw.get("nlu_auto_retrain", False)),
         ),
         query=QueryConfig(
             max_range_days=max_range_days,

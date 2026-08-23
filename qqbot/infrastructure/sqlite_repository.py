@@ -630,6 +630,25 @@ class SQLiteBookingRepository:
             ).fetchall()
             return self._cancel_rows(conn, rows, requested, include_user=False)
 
+    def cancel_all_user(self, user_id: str, from_date: date) -> list[CancelledSlot]:
+        """软删本人从 from_date 起的全部未来预约（同事务：明细 + 软删）。"""
+        with self._write() as conn:
+            rows = conn.execute(
+                """SELECT room_id, start_min, end_min FROM app_reservations
+                WHERE site_id=? AND user_id=? AND reserve_date>=? AND deleted_at IS NULL
+                ORDER BY reserve_date, room_id, start_min""",
+                (self.site_id, user_id, from_date.isoformat()),
+            ).fetchall()
+            batch = f"cancel:{uuid4()}"
+            conn.execute(
+                """UPDATE app_reservations SET deleted_at=?, delete_batch_id=?
+                WHERE site_id=? AND user_id=? AND reserve_date>=? AND deleted_at IS NULL""",
+                (_now_text(), batch, self.site_id, user_id, from_date.isoformat()),
+            )
+            return [
+                CancelledSlot(row["room_id"], TimeRange(row["start_min"], row["end_min"])) for row in rows
+            ]
+
     def _cancel_rows(
         self,
         conn: sqlite3.Connection,

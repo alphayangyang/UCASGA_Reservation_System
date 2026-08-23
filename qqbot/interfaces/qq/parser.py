@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from qqbot.domain.errors import ParseError
 
+if TYPE_CHECKING:
+    from qqbot.nlu.matcher import NLUIntentMatcher
+
 TIME_TOKEN = r"[0-9:.：]+"
-RANGE_RE = re.compile(rf"^(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—]\s*(?P<end>{TIME_TOKEN})\s*$")
+RANGE_RE = re.compile(rf"^(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—－]\s*(?P<end>{TIME_TOKEN})\s*$")
 QUERY_DATE_TOKEN = r"(?:\+\d+|\d{4}-\d{2}-\d{2})"
 QUERY_RANGE_RE = re.compile(
     rf"(?<!\S)(?P<start>{QUERY_DATE_TOKEN})"
@@ -17,11 +20,16 @@ QUERY_RANGE_RE = re.compile(
 
 @dataclass(frozen=True)
 class ParsedIntent:
-    """Parser 的稳定输出；未来 NLP 也只需产生这个结构。"""
+    """Parser 的稳定输出；未来 NLP 也只需产生这个结构。
+
+    hint：可选呈示提示（如 NLU 降级查询时提醒用户），默认为 None——
+    不影响协议兼容，Resolver 与 Command 均不消费它（手册：Command 不含呈示文字）。
+    """
 
     operation: str
     arguments: dict[str, Any] = field(default_factory=dict)
     admin: bool = False
+    hint: str | None = None
 
 
 def _strip_prefix(text: str) -> tuple[str, bool]:
@@ -59,12 +67,24 @@ def _take_query_range(value: str) -> tuple[str, str | None, str | None]:
 
 
 class QQCommandParser:
-    """只理解文字，不访问数据库、时钟或 QQ SDK。"""
+    """只理解文字，不访问数据库、时钟或 QQ SDK。
+
+    nlu：可选注入的 NLU 规则引擎（docs/NLU-DESIGN.md Phase 0）。
+    正则路径失败时才尝试 NLU；NLU 也失败则抛回原 ParseError（行为与关闭时一致）。
+    """
+
+    def __init__(self, nlu: NLUIntentMatcher | None = None) -> None:
+        self._nlu = nlu
 
     def parse(self, raw_text: str) -> ParsedIntent:
         text, admin = _strip_prefix(raw_text)
         if not text:
             raise ParseError("help")
+        # 称呼前缀剥离（「小泉，帮我约…」）：一处剥离，后续意图/房间/他人检测全用干净文本。
+        if self._nlu is not None:
+            text = self._nlu.strip_names(text)
+            if not text:
+                raise ParseError("help")
 
         action, _, remainder = text.partition(" ")
         # 兼容“预约303 7-8”一类没有空格的输入。
@@ -95,7 +115,27 @@ class QQCommandParser:
 
         if admin:
             return self._parse_admin(action, remainder)
-        return self._parse_user(action, remainder)
+
+        try:
+            return self._parse_user(action, remainder)
+        except ParseError:
+            # 文档 2.1：一行 fallback——正则失败才尝试 NLU，NLU 永不触碰 admin。
+            if self._nlu is not None:
+                intent = self._nlu.match(text)
+                if intent is not None:
+                    return intent
+                # 可爱化 fail-closed（docs/NLU-DESIGN.md 4.7）：
+                # match 内护栏（复合/他人/多日期多房间）命中的输入在此给专门文案；
+                # 像命令但缺槽位 → 保留原格式指导；纯闲聊 → chitchat；其余 → 听不懂。
+                reason = self._nlu.unsupported_reason(text)
+                if reason is not None:
+                    raise ParseError(reason) from None
+                if self._nlu.looks_like_command(text):
+                    raise
+                if self._nlu.is_chitchat(text):
+                    raise ParseError("chitchat") from None
+                raise ParseError("nlu_unrecognized") from None
+            raise
 
     def _parse_user(self, action: str, remainder: str) -> ParsedIntent:
         if action == "绑定":
@@ -114,6 +154,12 @@ class QQCommandParser:
 
         if action in {"查询", "空闲"}:
             room, range_start, range_end = _take_query_range(remainder)
+            # 可解释性约束（docs/NLU-DESIGN.md 4.8）：正则快车道只处理「所有组件都可解释」
+            # 的输入——「查询 X」的 X 必须命中房间白名单/数字模式，否则 fallback NLU，
+            # 由个人信号/ML 裁决；绝不静默把非房间文本当房间引用返回
+            # （曾导致「查询我的预约」→ query_schedule(room='我的预约') 的静默错误）。
+            if room and self._nlu is not None and self._nlu.resolve_room_reference(room) is None:
+                raise ParseError("help")
             return ParsedIntent(
                 "query_schedule" if action == "查询" else "query_free",
                 {
@@ -225,7 +271,7 @@ class QQCommandParser:
 
         if action in {"添加周常", "删除周常"}:
             match = re.fullmatch(
-                rf"(周[一二三四五六日天]|[1-7])\s+(.+?)\s+({TIME_TOKEN})\s*[-~～—]\s*({TIME_TOKEN})(?:\s+(.+))?",
+                rf"(周[一二三四五六日天]|[1-7])\s+(.+?)\s+({TIME_TOKEN})\s*[-~～—－]\s*({TIME_TOKEN})(?:\s+(.+))?",
                 remainder,
             )
             if not match:

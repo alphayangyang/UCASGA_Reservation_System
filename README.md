@@ -420,23 +420,29 @@ sudo systemctl status qqbot
 
 不要在 QQ Client、Presenter 或 Parser 中直接执行 SQL，也不要在 Presenter 中重新判断权限。
 
-## 将来接入 NLP
+## 自然语言支持（NLU，v3.1 已落地）
 
-NLP 层只需输出与 `ParsedIntent` 等价的受限结构：
+> 2026-08-23 起，bot 支持用自然语言预约/查询/取消/绑定，不限于 `/指令` 格式。
+> 详细设计见 `docs/NLU-DESIGN.md`，部署说明见 `docs/NLU-DEPLOY.md`。
 
-```json
-{
-  "operation": "create_reservation",
-  "arguments": {
-    "room_reference": "玉泉路琴房",
-    "start": "晚上九点",
-    "end": "十点半",
-    "offset": 1
-  },
-  "admin": false
-}
+**支持的表达（示例）**：
+
+```
+帮我约一下303 7点到8点半            → 预约
+明天下午3点去304外面的房间练2h琴      → 预约（复杂指代 → 房间缺省提示）
+查一下我的预约 / 看看我今天约的        → 查询个人预约
+周三303有没有空 / 下周二能约吗        → 空闲查询（周一制星期）
+把304b今晚的预约取消                → 取消
+我是张三 2023X1234567890          → 绑定
+明天下午约303（缺具体时间）          → 安全拒绝并给出格式指导
 ```
 
-随后仍须经过 Resolver、应用权限校验和数据库事务。模型不能提供 `user_id`，不能直接调用 Repository，也不能绕过歧义确认。
+**基本实现方式**（三层分工，全部本地可运行）：
 
-详细边界与扩展规则见 `docs/ARCHITECTURE.md` 和 `docs/DEVELOPMENT.md`。
+1. **意图识别**：ML 意图分类为主通道（字符 n-gram 朴素贝叶斯，模型约 61KB，`qqbot/nlu/data/intent_model.json`），置信度低于阈值时规则引擎（句式模板 + 关键词评分）兜底；复合指令（一次说多件事）在最前拦截防半执行；
+2. **槽位抓取**（全部本地规则，`qqbot/nlu/matcher.py`）：房间走 **gazetteer 白名单**（配置 name+aliases + `room_whitelist.json` 生长别名，最长匹配 + 边界检查）；时间/日期/星期走确定性正则（星期为周一制，NLU 只提原语、Resolver 换算绝对日期）；「琴房」等泛称安全缺省；
+3. **自优化闭环**：解析失败的输入夜间经 LLM 一致性投票标注（可选 `DEEPSEEK_API_KEY`），产物回流——房间别名/闲聊词自动生长进白名单（`scripts/optimize_whitelist.py`），意图模型自动重训（影子验证零回归才原子替换，`scripts/train_intent.py --auto`）。两个开关独立：`features.nlu_auto_optimize` / `nlu_auto_retrain`。
+
+关键原则：**槽位永远本地规则、fail-closed**——模型只判断意图，绝不猜测槽位（约错房间是事故）；规则引擎「组件可解释才采纳」，解释不了就交给 ML 或安全拒绝（help/格式指导），不做静默猜测。`ParsedIntent` 协议与 `/指令` 完全一致，后续均走 Resolver → 应用校验 → 数据库事务。
+
+> 边界与扩展规则见 `docs/ARCHITECTURE.md` 和 `docs/DEVELOPMENT.md`。

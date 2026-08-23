@@ -30,6 +30,13 @@ class CancelReservation:
 
 
 @dataclass(frozen=True)
+class CancelAllReservations:
+    """取消本人从当前业务日起的全部未来预约（NLU「取消全部预约」）。"""
+
+    pass
+
+
+@dataclass(frozen=True)
 class QuerySchedule:
     date_range: DateRange
     first_business_offset: int | None = None
@@ -121,6 +128,7 @@ Command: TypeAlias = (
     BindUser
     | CreateReservation
     | CancelReservation
+    | CancelAllReservations
     | QuerySchedule
     | QueryFreeSlots
     | QueryPersonal

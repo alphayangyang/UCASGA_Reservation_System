@@ -118,6 +118,13 @@ class QQPresenter:
                 f"日期：{self._date(data['date'], data['offset'])}\n"
                 f"琴房：{data['room_name']}\n申请：{data['requested'].display()}"
             )
+        if code == "all_reservations_cancelled":
+            slots = data.get("slots", [])
+            lines = [f"✅ 已取消未来全部预约（{len(slots)} 条）："]
+            for slot in slots:
+                lines.append(f"- [{self._room_name(slot.room_id)}] {slot.time_range.display()}")
+            return "\n".join(lines)
+
         if code == "reservation_cancelled":
             return f"✅ 已取消 {self._date(data['date'], data['offset'])} 的预约：\n" + self._slots(
                 data["slots"]
@@ -254,6 +261,19 @@ class QQPresenter:
             "role": "❌ 格式：#添加管理 姓名 [角色] / #删除管理 姓名 / #转让群主 姓名",
             "clear": "❌ 格式：#清空预约 [+1 或 YYYY-MM-DD]",
             "admin_help": "管理员指令：#添加管理、#删除管理、#取消、#查询、#清空预约、#添加周常、#查询周常。",
+            "chitchat": "再玩小泉要坏啦QwQ 💦",
+            "compound": "❌ 小泉还不支持这样的指令哦 (｡•́︿•̀｡)\n一次只说一件事就好啦～",
+            "past_date": "❌ 这个日期已经过去啦，试试「明天」或者 +0/+1 吧～",
+            "natural_past": (
+                "⏰ 现在已经过了 "
+                f"{self.config.business_boundary // 60:02d}:{self.config.business_boundary % 60:02d}，"
+                "「今天」的时段已经结束啦～试试「明天」吧"
+            ),
+            "other_person": "❌ 小泉不能帮你操作别人的预约哦 (｡•́︿•̀｡)\n只能取消/预约自己的预约～",
+            "nlu_unrecognized": (
+                "对不起，小泉现在还不能听懂哦 (´･_･`)\n"
+                "试试对我说「预约 303 7-8」或「帮我看看303有没有空」吧～"
+            ),
             "help": (
                 "🤖 琴房助手指令：\n"
                 f"/预约 {room} 21-22.5 [+0/+1/+2]\n"

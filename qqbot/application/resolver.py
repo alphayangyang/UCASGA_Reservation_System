@@ -11,6 +11,7 @@ from qqbot.domain.commands import (
     BackupUsers,
     BindUser,
     BroadcastRoutines,
+    CancelAllReservations,
     CancelReservation,
     ClearReservations,
     Command,
@@ -29,6 +30,25 @@ from qqbot.domain.errors import InvalidTimeRange, ParseError
 from qqbot.domain.models import DateRange, TimeRange
 from qqbot.infrastructure.config import SiteConfig
 from qqbot.interfaces.qq.parser import ParsedIntent
+
+
+def _weekday_target(today: date, weekday: int, mode: str) -> date:
+    """星期引用 → 绝对日期（周一制：周一是每周第一天，主人 2026-08-23 产品决策）。
+
+    - next：接下来最近的周X（含今天；今天周日说「周三」→ 下周三）
+    - this：本周的周X（可能已过 → 由调用方校验拒绝）
+    - next_week：下周的周X（今天周日说「下周一」→ 明天——明天即下周第一天）
+    - prev_week：上周的周X（恒过去 → 由调用方校验拒绝）
+    """
+    today_weekday = today.isoweekday()  # 周一=1 … 周日=7
+    week_start = today - timedelta(days=today_weekday - 1)  # 本周一
+    if mode == "this":
+        return week_start + timedelta(days=weekday - 1)
+    if mode == "next_week":
+        return week_start + timedelta(days=7 + weekday - 1)
+    if mode == "prev_week":
+        return week_start + timedelta(days=-7 + weekday - 1)
+    return today + timedelta(days=(weekday - today_weekday) % 7)  # next
 
 WEEKDAYS = {
     "周一": 0,
@@ -95,6 +115,39 @@ class CommandResolver:
         operation = intent.operation
 
         def offset_date() -> tuple[date, int]:
+            # 绝对日期（NLU 输出 date=YYYY-MM-DD，自然日语义）：转业务偏移并校验合法性。
+            absolute = args.get("date")
+            if absolute is not None:
+                target = parse_date(str(absolute))
+                offset = calendar.offset_of(now, target)
+                if offset < 0:
+                    raise ParseError("past_date")
+                if offset > config.max_query_offset:
+                    raise ParseError("offset", maximum=config.max_query_offset)
+                return target, offset
+            # NLU 自然日词（今天=0/明天=1…）：按用户直觉理解，22:00 后业务日已切到
+            # “自然日明天”，故自然日 N 对应业务日 N-1；为负说明“今天”已过 22:00 → 拒绝。
+            natural = args.get("natural_date")
+            if natural is not None:
+                natural = int(natural)
+                past_boundary = now.hour * 60 + now.minute >= config.business_boundary
+                business = natural - (1 if past_boundary else 0)
+                if business < 0:
+                    raise ParseError("natural_past")
+                if business > config.max_query_offset:
+                    raise ParseError("offset", maximum=config.max_query_offset)
+                return calendar.resolve_offset(now, business), business
+            # 星期引用（周X/下X/这X）：NLU 只给原语，绝对日期在此按周一制换算；
+            # 过去（本周已过/上周）→ natural_past 拒绝；超出可预约周期 → offset 拒绝。
+            weekday = args.get("weekday")
+            if weekday is not None:
+                target = _weekday_target(now.date(), int(weekday), str(args.get("week_mode", "next")))
+                offset = calendar.offset_of(now, target)
+                if offset < 0:
+                    raise ParseError("natural_past")
+                if offset > config.max_query_offset:
+                    raise ParseError("offset", maximum=config.max_query_offset)
+                return target, offset
             offset = int(args.get("offset", 0))
             if offset < 0 or offset > config.max_query_offset:
                 raise ParseError("offset", maximum=config.max_query_offset)
@@ -106,8 +159,42 @@ class CommandResolver:
             return offset_date()[0]
 
         def query_date_range() -> tuple[DateRange, int | None]:
-            start_value = args.get("range_start")
-            end_value = args.get("range_end")
+            # NLU 自然日（今天=0/明天=1…）→ 换算业务偏移（22:00 后 -1），再走统一范围逻辑。
+            # local_args 为外层 args 的副本（闭包陷阱：函数内赋值即局部，换名避免）。
+            local_args = dict(args)
+            natural_range = local_args.get("natural_range")
+            if natural_range is not None:
+                start, end = int(natural_range[0]), int(natural_range[1])
+                past_boundary = now.hour * 60 + now.minute >= config.business_boundary
+                start = max(start - (1 if past_boundary else 0), 0)
+                end = max(end - (1 if past_boundary else 0), 0)
+                local_args["range_start"] = f"+{start}"
+                local_args["range_end"] = f"+{end}"
+            natural = local_args.get("natural_date")
+            if natural is not None and "range_start" not in local_args:
+                past_boundary = now.hour * 60 + now.minute >= config.business_boundary
+                business = int(natural) - (1 if past_boundary else 0)
+                if business < 0:
+                    raise ParseError("natural_past")
+                local_args["range_start"] = f"+{business}"
+                local_args["range_end"] = f"+{business}"
+            weekday = local_args.get("weekday")
+            if weekday is not None and "range_start" not in local_args:
+                # 星期引用查询：换算绝对日期（周一制）；过去 → 拒绝；超出可查周期 → 拒绝
+                # （与 natural_date 分支的 max_query_offset 校验一致）
+                target = _weekday_target(
+                    now.date(), int(weekday), str(local_args.get("week_mode", "next"))
+                )
+                offset = calendar.offset_of(now, target)
+                if offset < 0:
+                    raise ParseError("natural_past")
+                if offset > config.max_query_offset:
+                    raise ParseError("offset", maximum=config.max_query_offset)
+                local_args["range_start"] = target.isoformat()
+                local_args["range_end"] = target.isoformat()
+
+            start_value = local_args.get("range_start")
+            end_value = local_args.get("range_end")
 
             if start_value is None:
                 start_offset, end_offset = config.query.default_range(actor_role)
@@ -172,6 +259,8 @@ class CommandResolver:
             target, offset = offset_date()
             return CreateReservation(room_id(), target, time_range(), offset)
         if operation == "cancel_reservation":
+            if args.get("cancel_all"):
+                return CancelAllReservations()
             target, offset = offset_date()
             if "start" not in args:
                 return CancelReservation(target, offset)
