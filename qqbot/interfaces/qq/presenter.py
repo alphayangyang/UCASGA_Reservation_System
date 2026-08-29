@@ -183,6 +183,36 @@ class QQPresenter:
                 f"[{self._room_name(item.room_id)}] {item.time_range.display()}（{item.purpose}）"
                 for item in routines
             )
+        if code == "lock_added":
+            text = (
+                f"✅ 已锁定：{self._date(data['date'])} "
+                f"[{data['room_name']}] {data['time_range'].display()}（{data['label']}）。"
+            )
+            covered = data.get("covered") or []
+            if covered:
+                lines = [text, ""]
+                for item in covered:
+                    detail = (
+                        item.original.display()
+                        if item.covered == item.original
+                        else f"{item.original.display()}，重叠 {item.covered.display()}"
+                    )
+                    lines.append(
+                        f"⚠️ 覆盖周常：{self._room_name(data['room_name'])} {detail}（{item.purpose}），"
+                        "当天该时段按锁定计算。"
+                    )
+                return "\n".join(lines)
+            return text
+        if code == "lock_removed":
+            return (
+                f"✅ 已解锁：{self._date(data['date'])} "
+                f"[{data['room_name']}] {data['time_range'].display()}。"
+            )
+        if code == "lock_not_found":
+            return (
+                f"⚠️ 没有找到匹配的锁定时段：{self._date(data['date'])} "
+                f"[{data['room_name']}] {data['time_range'].display()}。"
+            )
         if code == "users_backed_up":
             return f"✅ 已备份 {data['count']} 条用户身份记录。"
         if code == "users_restored":
@@ -258,9 +288,14 @@ class QQPresenter:
             "admin_cancel": f"❌ 格式：#取消 {room} 21-22.5 [+1 或 YYYY-MM-DD]",
             "routine": f"❌ 格式：#添加周常 周一 {room} 21-22.5 用途",
             "routine_query": "❌ 格式：#查询周常 [周一]",
+            "lock": f"❌ 格式：#锁定 {room} 21-22.5 [+1 或 YYYY-MM-DD] 用途",
+            "unlock": f"❌ 格式：#解锁 {room} 21-22.5 [+1 或 YYYY-MM-DD]",
             "role": "❌ 格式：#添加管理 姓名 [角色] / #删除管理 姓名 / #转让群主 姓名",
             "clear": "❌ 格式：#清空预约 [+1 或 YYYY-MM-DD]",
-            "admin_help": "管理员指令：#添加管理、#删除管理、#取消、#查询、#清空预约、#添加周常、#查询周常。",
+            "admin_help": (
+                "管理员指令：#添加管理、#删除管理、#取消、#查询、#清空预约、"
+                "#添加周常、#查询周常、#锁定、#解锁。"
+            ),
             "chitchat": "再玩小泉要坏啦QwQ 💦",
             "compound": "❌ 小泉还不支持这样的指令哦 (｡•́︿•̀｡)\n一次只说一件事就好啦～",
             "past_date": "❌ 这个日期已经过去啦，试试「明天」或者 +0/+1 吧～",

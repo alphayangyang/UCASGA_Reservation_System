@@ -63,6 +63,23 @@ class FeatureConfig:
     # nlu_auto_retrain  —— ML 意图模型自动重训（影子验证 + 原子替换，scripts/train_intent.py --auto）
     nlu_auto_optimize: bool = False
     nlu_auto_retrain: bool = False
+    # 定时播报开关（qqbot/interfaces/qq/broadcaster.py）：
+    # clock_announce   —— 22:00 整点文字报时（对时，解决抢琴房时间争议）
+    # silent_end_report —— 静默期结束后自动播报次日预约情况（图片）
+    clock_announce: bool = False
+    silent_end_report: bool = False
+
+
+@dataclass(frozen=True)
+class RoutineBroadcastConfig:
+    """周常定时播报参数（booking.routine_broadcast）。
+
+    time —— 每天播报时刻（分钟制，默认 21:00）；
+    days —— 播报从明天起连续 n 天（默认 1，保持只播次日；1～7）。
+    """
+
+    time: int = 21 * 60
+    days: int = 1
 
 
 @dataclass(frozen=True)
@@ -94,6 +111,7 @@ class SiteConfig:
     features: FeatureConfig
     query: QueryConfig
     default_owner_external_id: str
+    routine_broadcast: RoutineBroadcastConfig = RoutineBroadcastConfig()
     appid: str = ""
     secret: str = ""
     max_query_offset: int = 2
@@ -210,11 +228,17 @@ def load_site_config(path: str | Path, project_root: str | Path | None = None) -
             nlu_enabled=bool(features_raw.get("nlu_enabled", False)),
             nlu_auto_optimize=bool(features_raw.get("nlu_auto_optimize", False)),
             nlu_auto_retrain=bool(features_raw.get("nlu_auto_retrain", False)),
+            clock_announce=bool(features_raw.get("clock_announce", False)),
+            silent_end_report=bool(features_raw.get("silent_end_report", False)),
         ),
         query=QueryConfig(
             max_range_days=max_range_days,
             default_ranges=default_ranges,
             image_enabled=bool(query_raw.get("image_enabled", True)),
+        ),
+        routine_broadcast=RoutineBroadcastConfig(
+            time=parse_clock(booking.get("routine_broadcast", {}).get("time", "21:00")),
+            days=int(booking.get("routine_broadcast", {}).get("days", 1)),
         ),
         default_owner_external_id=os.getenv(
             "QQBOT_OWNER_EXTERNAL_ID", str(raw.get("default_owner_external_id", ""))
@@ -239,6 +263,8 @@ def load_site_config(path: str | Path, project_root: str | Path | None = None) -
     room_ids = [room.id for room in config.rooms]
     if len(room_ids) != len(set(room_ids)):
         raise ValueError(f"{config_path}: 房间 ID 重复")
+    if not 1 <= config.routine_broadcast.days <= 7:
+        raise ValueError(f"{config_path}: booking.routine_broadcast.days 必须在 1～7 之间")
     return config
 
 

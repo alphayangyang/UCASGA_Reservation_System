@@ -31,12 +31,7 @@ NOW = datetime(2026, 8, 22, 10, 0, tzinfo=SHANGHAI_TZ)
 
 
 def _site_aliases(*configs) -> tuple[str, ...]:
-    return tuple(
-        alias
-        for config in configs
-        for room in config.rooms
-        for alias in (room.name, *room.aliases)
-    )
+    return tuple(alias for config in configs for room in config.rooms for alias in (room.name, *room.aliases))
 
 
 def _parser(*configs) -> QQCommandParser:

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 
 from qqbot.domain.calendar import BusinessCalendar
 from qqbot.domain.commands import (
+    AddLock,
     AddRoutine,
     AdminCancel,
     AssignRole,
@@ -20,6 +21,7 @@ from qqbot.domain.commands import (
     QueryFreeSlots,
     QueryPersonal,
     QuerySchedule,
+    RemoveLock,
     RemoveRole,
     RemoveRoutine,
     RestoreUsers,
@@ -49,6 +51,7 @@ def _weekday_target(today: date, weekday: int, mode: str) -> date:
     if mode == "prev_week":
         return week_start + timedelta(days=-7 + weekday - 1)
     return today + timedelta(days=(weekday - today_weekday) % 7)  # next
+
 
 WEEKDAYS = {
     "周一": 0,
@@ -182,9 +185,7 @@ class CommandResolver:
             if weekday is not None and "range_start" not in local_args:
                 # 星期引用查询：换算绝对日期（周一制）；过去 → 拒绝；超出可查周期 → 拒绝
                 # （与 natural_date 分支的 max_query_offset 校验一致）
-                target = _weekday_target(
-                    now.date(), int(weekday), str(local_args.get("week_mode", "next"))
-                )
+                target = _weekday_target(now.date(), int(weekday), str(local_args.get("week_mode", "next")))
                 offset = calendar.offset_of(now, target)
                 if offset < 0:
                     raise ParseError("natural_past")
@@ -313,6 +314,10 @@ class CommandResolver:
         if operation == "broadcast_routines":
             local = calendar.localize(now)
             return BroadcastRoutines(local.date() + timedelta(days=1))
+        if operation == "add_lock":
+            return AddLock(room_id(), absolute_or_offset_date(), time_range(), str(args["purpose"]))
+        if operation == "remove_lock":
+            return RemoveLock(room_id(), absolute_or_offset_date(), time_range())
         if operation == "backup_users":
             return BackupUsers()
         if operation == "restore_users":

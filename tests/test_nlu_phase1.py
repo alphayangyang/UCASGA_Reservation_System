@@ -278,7 +278,9 @@ def test_nightly_annotate_unsupported_accepted(tmp_path: Path) -> None:
         data_dir,
         [
             {"text": "取消张三明天的预约", "bot_id": "yqh", "ts": "2026-08-22T12:00:00"},
-            {"text": "帮我约今天8点到9点", "bot_id": "yqh", "ts": "2026-08-22T12:01:00"},
+            # 注：用「明天」而非「今天」——annotate 内部取真实当前时间，
+            # 22:00 后「今天」会被 natural_past 正确拒绝（业务日边界），测试将时间敏感。
+            {"text": "帮我约明天8点到9点", "bot_id": "yqh", "ts": "2026-08-22T12:01:00"},
         ],
     )
 

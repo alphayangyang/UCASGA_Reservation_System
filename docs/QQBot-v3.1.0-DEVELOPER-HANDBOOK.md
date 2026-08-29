@@ -206,7 +206,8 @@ QQBot-v3.1/
 
 - 为每个图片开启站点启动一个常驻 Chromium；
 - 创建 `AsyncIOScheduler`；
-- 每天 Asia/Shanghai 时间 `04:00` 运行历史预约归档清理。
+- 每天 Asia/Shanghai 时间 `04:00` 运行历史预约归档清理；
+- 按各站点功能开关挂载定时主动播报（见 5.2）。
 
 图片渲染器启动失败不会阻止 Bot 运行，但该站点会回退文字。
 
@@ -253,6 +254,32 @@ QQBot-v3.1/
 | 雁栖湖 | 22:00–22:15 |
 | 玉泉路 | 22:00–22:03 |
 | 中关村 | 22:00–22:15 |
+
+### 5.2 定时主动播报
+
+实现集中在 `qqbot/interfaces/qq/broadcaster.py`：一个 `ProactiveSender` 主动推送通道
+（遍历 `data/control.db` 群绑定表，向站点绑定的全部群发送主动消息）+ 三个相互独立的 Job。
+Job 之间零共享状态，各按站点功能开关在 `on_ready` 挂载（`PianoBotClient._register_broadcast_jobs`）：
+
+| Job | 时刻 | 内容 | 开关 |
+| --- | --- | --- | --- |
+| `RoutineBroadcastJob` | 每天 `booking.routine_broadcast.time`（默认 21:00） | 从明天起连续 `days` 天（默认 1，1～7）的周常占用，图片优先 | `features.broadcast` **且** `features.weekly_routine` |
+| `ClockAnnounceJob` | 各站点 `silent_period.start` 时刻（默认 22:00） | 文字报时（系统时间 HH:MM:SS），解决抢琴房时间争议 | `features.clock_announce` |
+| `SilentEndReportJob` | 各站点 `silent_period.end` 时刻（跨午夜同样支持） | 次日（自然日）预约情况，图片优先 | `features.silent_end_report` |
+
+规则：
+
+- 三个 Job 的时刻全部来自 YAML（`booking.routine_broadcast.time`、`silent_period.start/end`），
+  改配置即生效，代码零硬编码；
+- 播报目标统一为「自然日次日」：周常播报从明天起连续 days 天（抢琴房高峰之前播报，
+  便于用户提前规划）；静默期结束时业务日已是次日，「次日」即当晚 22:00 抢到的琴房所在日；
+- 查询结果统一经 `BookingApplication.daily_schedule / routine_schedule` 构造
+  （无身份系统读操作，跳过身份/权限校验——调用方是定时任务而非用户，只读不进事务）；
+- 图片链路失败自动回退同一结果的文字呈示（与普通查询同一回退原则）；
+- 主动消息不受被动回复 5 分钟有效期限制；单群发送失败只记日志，不影响其余群；
+- 腾讯主动消息频控（群聊：未认证 30/qpm、单群 20/qpm、每日 1000 条/群）对每日三条播报绰绰有余；
+- 报时受主动消息链路延迟影响（通常秒级，官方无 SLA）：cron 按时触发，文案携带触发时刻的
+  系统时间戳作为对时基准，不提前补偿（延迟不可控，提前反而误导）。
 
 ## 6. 业务日、日期范围与时间
 
@@ -358,6 +385,8 @@ end % 30 == 0
 | `#删除周常 周一 琴房 21-22.5` | `RemoveRoutine` | 必须完全匹配 |
 | `#查询周常 [周一]` | `ListRoutines` | 可查全部或指定星期 |
 | `#播报周常` | `BroadcastRoutines` | 查询自然日次日的周常；需 `broadcast` |
+| `#锁定 琴房 21-22.5 [+1/日期] 用途` | `AddLock` | 单日临时锁定；与预约/锁定重叠拒绝；**允许覆盖周常**并在回执中提示被覆盖的周常 |
+| `#解锁 琴房 21-22.5 [+1/日期]` | `RemoveLock` | 必须完全匹配；用途不允许出现 |
 | `#备份用户` | `BackupUsers` | 覆盖固定 CSV 备份文件 |
 | `#恢复用户` | `RestoreUsers` | 只补缺失记录，不覆盖已有记录 |
 
@@ -454,6 +483,8 @@ regular_start <= 收到时间 < rush_start  → regular 限制
 | `RemoveRoutine` | `weekday`, `room_id`, `time_range` |
 | `ListRoutines` | `weekday?` |
 | `BroadcastRoutines` | `target_date` |
+| `AddLock` | `room_id`, `reserve_date`, `time_range`, `label` |
+| `RemoveLock` | `room_id`, `reserve_date`, `time_range` |
 | `BackupUsers` | 无字段 |
 | `RestoreUsers` | 无字段 |
 
@@ -547,6 +578,11 @@ execute(context: RequestContext, command: Command) -> OperationResult
 - `_require_admin(context)`：比较角色等级；
 - `_room_name(room_id)`：呈示用房间名；
 - `_bind(context, command)`：绑定格式和年份验证。
+
+无身份系统读操作（定时播报用，见 5.2；只读、不进写事务）：
+
+- `daily_schedule(target_date, room_id=None)`：单日 `schedule_range`，含全部占用；
+- `routine_schedule(target_date)`：单日 `schedule_range`，仅含周常占用。
 
 ### 11.2 `Dispatcher`
 
@@ -676,6 +712,8 @@ Result：reservation_partially_created
 | `add_routine(...)` | `Routine` | 检查周常和未来已有预约冲突 |
 | `remove_routine(...)` | `bool` | 完全匹配删除 |
 | `list_routines(weekday?)` | `list[Routine]` | 排序返回 |
+| `add_lock(...)` | `(LockedSlot, list[CoveredRoutine])` | 单日临时锁定；与同日同房间的锁定/预约重叠拒绝；周常允许被覆盖并返回覆盖片段 |
+| `remove_lock(...)` | `bool` | 完全匹配删除 |
 | `backup_users()` | `(Path, count)` | 写固定 CSV |
 | `restore_users()` | `count` | insert-or-ignore |
 | `cleanup_old(cutoff)` | `count` | 先 CSV 归档再物理删除 |
@@ -806,7 +844,8 @@ SQLite 的 locked/busy 会映射为 `DatabaseBusy`；其他 `OperationalError` �
 
 ### 15.8 `app_locked_slots`
 
-保存指定日期的锁定区间。当前 v3.1.0 只有读取与旧表迁移能力，没有新增/删除锁定的 Command/Repository 公共方法。
+保存指定日期的锁定区间（单日临时占用，不重复）。通过 `#锁定` / `#解锁` 管理指令
+（`AddLock` / `RemoveLock`）读写；会参与占用查询、空闲计算和新预约冲突。
 
 ### 15.9 `app_audit_log`
 
@@ -857,7 +896,8 @@ group_bindings(
 | `default_owner_external_id` | 初始 owner 的 QQ 外部 ID |
 | `roles.levels` | 角色与整数等级 |
 | `booking.*` | 开放时间、业务日、偏移、静默、时长 |
-| `features.*` | advance/routine/broadcast/nlu_enabled 开关（nlu_enabled 见第 33 节） |
+| `booking.routine_broadcast.time/days` | 周常定时播报时刻与天数（1～7，见 5.2） |
+| `features.*` | advance/routine/broadcast/nlu_enabled/clock_announce/silent_end_report 开关（nlu_enabled 见第 33 节，定时播报见 5.2） |
 | `query.*` | 最大天数、图片、按角色缺省范围 |
 
 ### 16.3 房间配置
@@ -975,11 +1015,17 @@ PUT 每片最多尝试 3 次，单次总超时 300 秒，重试间隔被限制�
 
 - `start()`：启动 Playwright runtime 和 Chromium；
 - `available`：`_browser is not None`；
-- `render_html(result)`：Jinja2 自动转义；
-- `render(result)`：新建 Page、设置 HTML、截图 `#schedule`、关闭 Page；
+- `render_html(result, theme=None)`：Jinja2 自动转义；`theme` 缺省时由 `current_theme()` 按上海时区判定（19:00～次日 07:00 深色，其余浅色），模板以 `body.theme-light/dark` 切换 CSS 变量配色；
+- `render(result)`：新建 Page、设置 HTML、执行 `_fit_row_heights`（同行块等高、整行随换行内容变高）、截图 `#schedule`、关闭 Page；
 - `close()`：关闭 Browser 和 Playwright。
 
 v3.1.0 每个开启图片的站点各有一个 renderer，所以三个站点默认会启动三个 Browser 实例。Browser 常驻，Page 按查询创建和关闭。
+
+样式要点（Soft Flat 设计语言，详见 `docs/QUERY_IMAGES.md`）：
+
+- 模板目录 `templates/fonts/*.woff2` 由渲染器内联为 data URI（`{{ font_400 }}` / `{{ font_700 }}`），无系统字体服务器也能渲染中文；
+- 按日期交替行底色（`day_alt`），同行块等高且时间统一固定在块底部左下角；
+- 块内名字 13px 固定、允许换行，不压缩字号、不出现省略号。
 
 ### 18.3 文字回退
 
@@ -1031,7 +1077,7 @@ Repository 初始化时，如果配置了 `default_owner_external_id`：
 - 一旦存在冲突就拒绝添加，不会自动取消已有预约；
 - 普通预约会把对应星期的周常视为占用。
 
-当前只有雁栖湖开启 `weekly_routine` 与 `broadcast`。
+当前只有雁栖湖开启 `weekly_routine` 与 `broadcast`（定时周常播报要求两者同时开启，见 5.2）。
 
 ### 20.2 锁定
 
@@ -1041,7 +1087,12 @@ Repository 初始化时，如果配置了 `default_owner_external_id`：
 - 空闲计算；
 - 新预约冲突。
 
-但 v3.1.0 没有新增/删除锁定的应用接口。若要增加，应按“新增指令”完整穿过各层，而不是直接让 QQ Client 执行 SQL。
+管理入口为 `#锁定` / `#解锁`（`AddLock` / `RemoveLock`，见 7.2）：单日临时占用，
+不按周重复，适合一次性活动。`AddLock` 校验：房间存在、日期非过去业务日、时段在开放
+时间内；与同日同房间的已有**预约、锁定**重叠时拒绝（`NotFound(lock_slot)`），
+与**周常重叠允许**——锁定优先于周常：当日被锁定覆盖的周常区间在查询、空闲计算中
+让位给锁定，回执里提示被覆盖的周常（`covered` 列表，含用途、原时段、重叠部分）；
+`#解锁` 后周常自动恢复显示，无需其他操作。
 
 ### 20.3 空闲
 
@@ -1397,9 +1448,13 @@ async close() -> None
 
 `app_audit_log` 存在，但角色变更、管理员取消、清空、撤销和 owner 转让均未写审计；`clear_date/undo_clear` 的 `actor_id` 参数也未使用。
 
-### 25.6 锁定时段没有应用接口（低至中优先级）
+### 25.6 锁定时段没有应用接口（✅ 已解决 2026-08-23）
 
-系统会读取 `app_locked_slots`，但只能通过旧数据迁移或人工 SQL 得到。建议未来增加完整 Command 流程，避免直接操作生产数据库。
+原问题：系统只读取 `app_locked_slots`，只能通过旧数据迁移或人工 SQL 得到，无法用指令维护。
+
+修复：新增 `#锁定` / `#解锁` 管理指令，完整穿过 Parser → Resolver → Command（`AddLock` /
+`RemoveLock`）→ Application → Repository（`add_lock` / `remove_lock`，含三重冲突检查）→
+Presenter → 测试，见 7.2 / 15.8 / 20.2。
 
 ### 25.7 Async Client 中执行同步 SQLite（中优先级）
 
@@ -1669,6 +1724,7 @@ env | grep '^QQBOT_'
 | `infrastructure.group_bindings` | `GroupBindingStore.initialize()` | 建表 |
 |  | `get(group_id)` | `bot_id?` |
 |  | `set(group_id, bot_id)` | upsert |
+|  | `groups_for(bot_id)` | 该站点绑定的全部群 ID（定时主动播报用） |
 |  | `import_legacy_json(path)` | 新导入条数，不覆盖已有值 |
 | `infrastructure.sqlite_repository` | `SQLiteBookingRepository(config)` | 一个站点的 Repository 实现 |
 
@@ -1684,12 +1740,15 @@ env | grep '^QQBOT_'
 |  | `QQPresenter.usage(key, details?)` | 格式帮助文本 |
 | `interfaces.qq.media_uploader` | `QQMediaUploader.upload_image(group_openid, content, file_name)` | `{file_info}` |
 |  | `QQOpenAPIRoute` | 把富媒体接口固定到 `api.bot.qq.com` 的 Route 子类 |
+| `interfaces.qq.broadcaster` | `ProactiveSender(api, bindings, uploader_factory?)` | 主动推送通道：遍历绑定群发文字/图片；单群失败不中断 |
+|  | `ProactiveSender.send_schedule_image(...)` | 图片优先、失败回退文字（5.2） |
+|  | `RoutineBroadcastJob / ClockAnnounceJob / SilentEndReportJob` | 三个独立定时播报 Job（5.2），由 Client 挂载 |
 | `interfaces.qq.client` | `PianoBotClient.on_ready()` | QQ SDK 生命周期回调 |
 |  | `PianoBotClient.on_group_at_message_create(message)` | QQ 群消息入口 |
 |  | `PianoBotClient.close()` | 关闭浏览器、scheduler 与 SDK |
 |  | `run_bot(project_root)` | 生产启动入口 |
 
-`PianoBotClient._send/_send_result/_handle_bind_config/_cleanup_all_sites` 是 Client 内部编排方法，不应成为 Web 等新入口的复用接口。
+`PianoBotClient._send/_send_result/_handle_bind_config/_cleanup_all_sites/_register_broadcast_jobs` 是 Client 内部编排方法，不应成为 Web 等新入口的复用接口。
 
 ### 32.5 图片呈示
 

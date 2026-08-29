@@ -30,12 +30,7 @@ def _parser(*, with_ml: bool, aliases: tuple[str, ...] = ()) -> QQCommandParser:
 
 
 def _site_aliases(*configs) -> tuple[str, ...]:
-    return tuple(
-        alias
-        for config in configs
-        for room in config.rooms
-        for alias in (room.name, *room.aliases)
-    )
+    return tuple(alias for config in configs for room in config.rooms for alias in (room.name, *room.aliases))
 
 
 # —— 5 个历史已知错配修复验收（正则抢跑 → fallback NLU → 个人信号裁决）——

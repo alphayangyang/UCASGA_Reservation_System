@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 from qqbot.application.ports import BookingRepository
 from qqbot.domain.calendar import BusinessCalendar
 from qqbot.domain.commands import (
+    AddLock,
     AddRoutine,
     AdminCancel,
     AssignRole,
@@ -20,6 +22,7 @@ from qqbot.domain.commands import (
     QueryFreeSlots,
     QueryPersonal,
     QuerySchedule,
+    RemoveLock,
     RemoveRole,
     RemoveRoutine,
     RestoreUsers,
@@ -35,7 +38,7 @@ from qqbot.domain.errors import (
     NotRegistered,
     PermissionDenied,
 )
-from qqbot.domain.models import OperationResult, RequestContext, TimeRange
+from qqbot.domain.models import DateRange, OperationResult, RequestContext, TimeRange
 from qqbot.infrastructure.config import SiteConfig
 
 
@@ -156,28 +159,8 @@ class BookingApplication:
                     occupancies=values,
                     admin_view=True,
                 )
-
-            room_ids = [command.room_id] if command.room_id else [room.id for room in self.config.rooms]
-            days = []
-            for index, target in enumerate(command.date_range.dates()):
-                offset = (
-                    command.first_business_offset + index
-                    if command.first_business_offset is not None
-                    else None
-                )
-                days.append(
-                    {
-                        "date": target,
-                        "offset": offset,
-                        "occupancies": self.repository.schedule(target, command.room_id),
-                        "admin_view": False,
-                    }
-                )
-            return OperationResult.success(
-                "schedule_range",
-                date_range=command.date_range,
-                room_ids=room_ids,
-                days=days,
+            return self._schedule_range_result(
+                command.date_range, command.first_business_offset, command.room_id
             )
 
         if isinstance(command, QueryFreeSlots):
@@ -313,6 +296,38 @@ class BookingApplication:
             routines = [item for item in self.repository.list_routines(command.target_date.weekday())]
             return OperationResult.success("routine_broadcast", date=command.target_date, routines=routines)
 
+        if isinstance(command, AddLock):
+            self._require_admin(context)
+            self.config.room_by_id(command.room_id)
+            if self.calendar.offset_of(context.received_at, command.reserve_date) < 0:
+                raise InvalidTimeRange("不能锁定已经过去的业务日")
+            if (
+                command.time_range.start < self.config.open_minutes
+                or command.time_range.end > self.config.close_minutes
+            ):
+                raise InvalidTimeRange("锁定时段超出琴房开放时间")
+            lock, covered = self.repository.add_lock(
+                command.room_id, command.reserve_date, command.time_range, command.label
+            )
+            return OperationResult.success(
+                "lock_added",
+                date=lock.locked_date,
+                room_name=self._room_name(lock.room_id),
+                time_range=lock.time_range,
+                label=lock.label,
+                covered=covered,
+            )
+
+        if isinstance(command, RemoveLock):
+            self._require_admin(context)
+            removed = self.repository.remove_lock(command.room_id, command.reserve_date, command.time_range)
+            return OperationResult.success(
+                "lock_removed" if removed else "lock_not_found",
+                date=command.reserve_date,
+                room_name=self._room_name(command.room_id),
+                time_range=command.time_range,
+            )
+
         if isinstance(command, BackupUsers):
             self._require_admin(context)
             path, count = self.repository.backup_users()
@@ -324,6 +339,56 @@ class BookingApplication:
             return OperationResult.success("users_restored", count=count)
 
         raise NotFound("command")
+
+    def daily_schedule(self, target_date: date, room_id: str | None = None) -> OperationResult:
+        """无身份的系统读操作（定时播报用）：单日 schedule_range，含全部占用。
+
+        与 QuerySchedule（非管理员视图）共用同一构造逻辑，但跳过身份/权限校验——
+        调用方是定时任务而非用户；只读，不进入任何写事务。
+        """
+
+        return self._schedule_range_result(DateRange(target_date, target_date), None, room_id)
+
+    def routine_schedule(self, start_date: date, days: int = 1) -> OperationResult:
+        """无身份的系统读操作（定时周常播报用）：多日 schedule_range，仅含周常占用。
+
+        days 从 start_date 起连续天数（含首日，最多 7）。
+        """
+
+        end_date = start_date + timedelta(days=days - 1)
+        result = self._schedule_range_result(DateRange(start_date, end_date), None, None)
+        for day in result.data["days"]:
+            day["occupancies"] = [item for item in day["occupancies"] if item.kind == "routine"]
+        return result
+
+    def _schedule_range_result(
+        self,
+        date_range: DateRange,
+        first_business_offset: int | None,
+        room_id: str | None,
+    ) -> OperationResult:
+        room_ids = [room_id] if room_id else [room.id for room in self.config.rooms]
+        days = []
+        for index, target in enumerate(date_range.dates()):
+            offset = (
+                first_business_offset + index
+                if first_business_offset is not None
+                else None
+            )
+            days.append(
+                {
+                    "date": target,
+                    "offset": offset,
+                    "occupancies": self.repository.schedule(target, room_id),
+                    "admin_view": False,
+                }
+            )
+        return OperationResult.success(
+            "schedule_range",
+            date_range=date_range,
+            room_ids=room_ids,
+            days=days,
+        )
 
     def _bind(self, context: RequestContext, command: BindUser) -> OperationResult:
         if not (1 <= len(command.display_name) <= 10) or not re.fullmatch(

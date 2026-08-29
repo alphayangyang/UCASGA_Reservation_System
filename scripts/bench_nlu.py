@@ -44,11 +44,9 @@ def load_room_aliases() -> tuple[str, ...]:
 
     configs = load_all_configs(ROOT / "configs", project_root=ROOT)
     return tuple(
-        alias
-        for config in configs.values()
-        for room in config.rooms
-        for alias in (room.name, *room.aliases)
+        alias for config in configs.values() for room in config.rooms for alias in (room.name, *room.aliases)
     )
+
 
 # (输入, 期望 operation；None 表示应 fail-closed)
 EXTRA_CASES: list[tuple[str, str | None]] = [
@@ -182,10 +180,13 @@ def render_report(parser: QQCommandParser) -> str:
     combined = bench(parser, seed + extra)
 
     lines: list[str] = []
-    lines.append("# NLU Phase 0 本地模拟与性能报告")
+    lines.append("# NLU 本地模拟与性能报告")
     lines.append("")
     lines.append(f"- 生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("- 模型：**零训练规则引擎**（Phase 0，无 ML）")
+    lines.append(
+        "- 通道：**规则引擎单独（未挂载 ML 模型）**——退化路径评测；"
+        "真实环境为 ML 意图主通道 + 规则兜底（见 --compare 三方对比）"
+    )
     lines.append(f"- 峰值 RSS：{peak_rss_kb():,} KB")
     lines.append("")
 

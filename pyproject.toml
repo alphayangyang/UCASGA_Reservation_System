@@ -28,7 +28,7 @@ dev = [
 include = ["qqbot*"]
 
 [tool.setuptools.package-data]
-"qqbot.presentation" = ["templates/*.jinja"]
+"qqbot.presentation" = ["templates/*.jinja", "templates/fonts/*.woff2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

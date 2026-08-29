@@ -102,6 +102,8 @@ class QQCommandParser:
             "备份用户",
             "恢复用户",
             "播报周常",
+            "锁定",
+            "解锁",
             "预约",
             "取消",
             "查询",
@@ -292,5 +294,36 @@ class QQCommandParser:
             if remainder and not re.fullmatch(r"周[一二三四五六日天]|[1-7]", remainder):
                 raise ParseError("routine_query")
             return ParsedIntent("list_routines", {"weekday": remainder or None}, True)
+
+        if action in {"锁定", "解锁"}:
+            # 语法：#锁定 琴房 21-22.5 [+1 或 YYYY-MM-DD] [用途]
+            #       #解锁 琴房 21-22.5 [+1 或 YYYY-MM-DD]（用途不允许）
+            match = re.fullmatch(
+                rf"(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—－]\s*(?P<end>{TIME_TOKEN})"
+                rf"(?:\s+(?P<date>\d{{4}}-\d{{2}}-\d{{2}}|\+\d+))?(?:\s+(?P<purpose>.+))?$",
+                remainder,
+            )
+            if not match:
+                raise ParseError("lock" if action == "锁定" else "unlock")
+            # 防歧义：用户把日期写在时间之前时，MM-DD 会被正则吞成时间范围
+            # （如「303 2026-08-10」→ 房间「303 2026-」、时间 08-10）。输入里有完整
+            # 日期却没被 date 组捕获，即发生了这种吞并，直接按格式错误拒绝。
+            if match.group("date") is None and re.search(r"\d{4}-\d{2}-\d{2}", remainder):
+                raise ParseError("lock" if action == "锁定" else "unlock")
+            if action == "解锁" and match.group("purpose"):
+                raise ParseError("unlock")
+            return ParsedIntent(
+                "add_lock" if action == "锁定" else "remove_lock",
+                {
+                    "room_reference": match.group("room").strip() or None,
+                    "start": match.group("start"),
+                    "end": match.group("end"),
+                    "date": match.group("date") or None,
+                    "purpose": (
+                        (match.group("purpose") or "临时锁定").strip() if action == "锁定" else None
+                    ),
+                },
+                True,
+            )
 
         raise ParseError("admin_help")

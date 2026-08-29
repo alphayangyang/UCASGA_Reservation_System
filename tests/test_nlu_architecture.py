@@ -34,12 +34,7 @@ def _parser(*, with_ml: bool, aliases: tuple[str, ...] = ()) -> QQCommandParser:
 
 
 def _site_aliases(*configs) -> tuple[str, ...]:
-    return tuple(
-        alias
-        for config in configs
-        for room in config.rooms
-        for alias in (room.name, *room.aliases)
-    )
+    return tuple(alias for config in configs for room in config.rooms for alias in (room.name, *room.aliases))
 
 
 # —— ML 主通道 ——

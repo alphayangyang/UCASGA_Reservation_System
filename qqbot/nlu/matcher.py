@@ -182,9 +182,7 @@ PERIOD_OFFSET = {"早上": 0, "上午": 0, "中午": 0, "下午": 12, "傍晚": 
 # NLU 只提取星期原语（weekday + week_mode），不读当前时间（手册 10.2）——
 # 绝对日期换算由 Resolver 按当前日期完成（与自然日词同架构）。
 # (?<!一)：防「查一下周一」的「下」被当作前缀（「一下周一」是动词短语，不是下周）。
-WEEKDAY_RE = re.compile(
-    r"(?<!一)(?P<mode>下|这|本|上)?(?P<unit>周|星期|礼拜)(?P<wd>[一二三四五六日天])"
-)
+WEEKDAY_RE = re.compile(r"(?<!一)(?P<mode>下|这|本|上)?(?P<unit>周|星期|礼拜)(?P<wd>[一二三四五六日天])")
 WEEKDAY_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "日": 7, "天": 7}
 _WEEK_MODE_MAP = {"下": "next_week", "这": "this", "本": "this", "上": "prev_week"}
 
@@ -199,6 +197,7 @@ def _extract_weekdays(text: str) -> list[tuple[int, str]]:
         mode = _WEEK_MODE_MAP.get(match.group("mode") or "", "next")
         hits.append((WEEKDAY_MAP[match.group("wd")], mode))
     return hits
+
 
 TIME_RANGE_RE = re.compile(
     rf"(?P<p1>下午|晚上|上午|早上|中午|傍晚)?\s*(?P<h1>{CN_HOUR})\s*(?:点\s*(?P<hm1>半)?|[:：](?P<m1>\d{{2}}))?\s*"
@@ -227,7 +226,18 @@ _GAZETTEER_HINTS = ("琴房", "排练室", "房间")
 _GAZETTEER_ALNUM_RE = re.compile(r"[A-Za-z0-9]")
 # 数字房间引用后紧跟方位修饰 → 复杂指代（「304外面的房间」）→ 不猜（文档 5.4.2）
 _ROOM_MODIFIER_SUFFIX = (
-    "外面", "旁边", "附近", "隔壁", "对面", "里面", "楼下", "楼上", "门口", "外", "里", "旁",
+    "外面",
+    "旁边",
+    "附近",
+    "隔壁",
+    "对面",
+    "里面",
+    "楼下",
+    "楼上",
+    "门口",
+    "外",
+    "里",
+    "旁",
 )
 
 
@@ -892,9 +902,7 @@ class NLUIntentMatcher:
             signal in text for signal in PERSONAL_SIGNALS
         ):
             for pattern, operation in PATTERNS:
-                if operation == "create_reservation" and any(
-                    signal in text for signal in QUERY_FREE_SIGNALS
-                ):
+                if operation == "create_reservation" and any(signal in text for signal in QUERY_FREE_SIGNALS):
                     continue  # 「能约吗」的「约」是问句动词，不触发 create 模板
                 if pattern.search(text):
                     candidates.append((operation, SCORE_TEMPLATE))
@@ -923,8 +931,7 @@ class NLUIntentMatcher:
                     # ML 判 create 但文本含取消信号（「取消303明天7点到8点半」被 ML
                     # 带偏成 create）→ ML 候选不可信，交给规则候选裁决。
                     if not (
-                        operation == "create_reservation"
-                        and any(signal in text for signal in CANCEL_SIGNALS)
+                        operation == "create_reservation" and any(signal in text for signal in CANCEL_SIGNALS)
                     ):
                         candidates.append((operation, confidence))
         candidates.extend(self._rule_intents(text))

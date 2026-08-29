@@ -88,8 +88,12 @@ async def run_nightly_job(data_dir: Path, configs: dict[str, SiteConfig], api_ke
             report = run_auto_optimize(data_dir, configs)
             applied = len(report["manual_applied"]) + len(report["auto_applied"])
             rejected = len(report["manual_rejected"]) + len(report["auto_rejected"])
-            logger.info("夜间白名单自优化：应用 %s 条，拒绝 %s 条，闲聊词 %s 条",
-                        applied, rejected, len(report["chitchat_added"]))
+            logger.info(
+                "夜间白名单自优化：应用 %s 条，拒绝 %s 条，闲聊词 %s 条",
+                applied,
+                rejected,
+                len(report["chitchat_added"]),
+            )
         except Exception:
             logger.exception("夜间白名单自优化失败（不影响主链路）")
 
@@ -103,8 +107,10 @@ async def run_nightly_job(data_dir: Path, configs: dict[str, SiteConfig], api_ke
             if report.get("applied"):
                 logger.info(
                     "夜间 ML 自动重训完成：基线 %s → %s（%s 条用例，样本基线 %s 条）",
-                    report["old_hits"], report["new_hits"],
-                    report["total_cases"], report["trained_candidates"],
+                    report["old_hits"],
+                    report["new_hits"],
+                    report["total_cases"],
+                    report["trained_candidates"],
                 )
             else:
                 logger.info("夜间 ML 自动重训跳过：%s", report.get("skipped"))

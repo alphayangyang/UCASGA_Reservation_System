@@ -16,7 +16,9 @@ from qqbot.domain.errors import (
 )
 from qqbot.domain.models import (
     CancelledSlot,
+    CoveredRoutine,
     ExternalIdentity,
+    LockedSlot,
     Occupancy,
     RequestContext,
     Routine,
@@ -165,6 +167,27 @@ def _available_parts(requested: TimeRange, occupied: Sequence[TimeRange]) -> lis
     if cursor < requested.end:
         result.append(TimeRange(cursor, requested.end))
     return result
+
+
+def _subtract_locks(value: TimeRange, locks: Sequence[TimeRange]) -> list[TimeRange]:
+    """把 value 中与锁定时段重叠的部分裁掉，返回剩余碎片（可能为空）。
+
+    锁定时段优先于周常（AddLock 允许覆盖周常）：当日被锁定的区间，周常让位。
+    """
+
+    parts = [value]
+    for lock in _merge(locks):
+        next_parts: list[TimeRange] = []
+        for part in parts:
+            if not part.overlaps(lock):
+                next_parts.append(part)
+                continue
+            if part.start < lock.start:
+                next_parts.append(TimeRange(part.start, min(part.end, lock.start)))
+            if lock.end < part.end:
+                next_parts.append(TimeRange(max(part.start, lock.end), part.end))
+        parts = next_parts
+    return parts
 
 
 class SQLiteBookingRepository:
@@ -530,18 +553,22 @@ class SQLiteBookingRepository:
             (self.site_id, target_date.isoformat(), room_id),
         ):
             values.append(TimeRange(row[0], row[1]))
-        for row in conn.execute(
-            """SELECT start_min, end_min FROM app_locked_slots
-            WHERE site_id=? AND locked_date=? AND room_id=?""",
-            (self.site_id, target_date.isoformat(), room_id),
-        ):
-            values.append(TimeRange(row[0], row[1]))
+        locks = [
+            TimeRange(row[0], row[1])
+            for row in conn.execute(
+                """SELECT start_min, end_min FROM app_locked_slots
+                WHERE site_id=? AND locked_date=? AND room_id=?""",
+                (self.site_id, target_date.isoformat(), room_id),
+            )
+        ]
+        values += locks
+        # 锁定时段优先于周常：被锁定覆盖的周常区间当天不再计入占用。
         for row in conn.execute(
             """SELECT start_min, end_min FROM app_weekly_routines
             WHERE site_id=? AND weekday=? AND room_id=?""",
             (self.site_id, target_date.weekday(), room_id),
         ):
-            values.append(TimeRange(row[0], row[1]))
+            values += _subtract_locks(TimeRange(row[0], row[1]), locks)
         return values
 
     def book_available(
@@ -746,10 +773,18 @@ class SQLiteBookingRepository:
             )
             for row in reservations
         ]
-        result += [
-            Occupancy(row["room_id"], TimeRange(row["start_min"], row["end_min"]), "routine", row["purpose"])
-            for row in routines
-        ]
+        # 锁定时段优先于周常：按房间分组，被锁定覆盖的周常区间当天不显示。
+        locks_by_room: dict[str, list[TimeRange]] = {}
+        for row in locks:
+            locks_by_room.setdefault(row["room_id"], []).append(
+                TimeRange(row["start_min"], row["end_min"])
+            )
+        for row in routines:
+            for part in _subtract_locks(
+                TimeRange(row["start_min"], row["end_min"]),
+                locks_by_room.get(row["room_id"], []),
+            ):
+                result.append(Occupancy(row["room_id"], part, "routine", row["purpose"]))
         result += [
             Occupancy(row["room_id"], TimeRange(row["start_min"], row["end_min"]), "lock", row["label"])
             for row in locks
@@ -852,6 +887,67 @@ class SQLiteBookingRepository:
                 """DELETE FROM app_weekly_routines
                 WHERE site_id=? AND weekday=? AND room_id=? AND start_min=? AND end_min=?""",
                 (self.site_id, weekday, room_id, time_range.start, time_range.end),
+            )
+            return cursor.rowcount > 0
+
+    def add_lock(
+        self, room_id: str, locked_date: date, time_range: TimeRange, label: str
+    ) -> tuple[LockedSlot, list[CoveredRoutine]]:
+        """单日临时锁定：与同日同房间的已有锁定、预约重叠时拒绝。
+
+        周常允许被覆盖（锁定时段优先）；返回被覆盖的周常片段，供提示用。
+        """
+        with self._write() as conn:
+            for row in conn.execute(
+                """SELECT start_min, end_min, label FROM app_locked_slots
+                WHERE site_id=? AND room_id=? AND locked_date=?""",
+                (self.site_id, room_id, locked_date.isoformat()),
+            ):
+                if time_range.overlaps(TimeRange(row[0], row[1])):
+                    raise NotFound("lock_slot", reason="lock_conflict", label=row[2])
+            for row in conn.execute(
+                """SELECT start_min, end_min, u.display_name
+                FROM app_reservations r JOIN app_users u ON u.id=r.user_id
+                WHERE r.site_id=? AND r.room_id=? AND r.reserve_date=? AND r.deleted_at IS NULL""",
+                (self.site_id, room_id, locked_date.isoformat()),
+            ):
+                if time_range.overlaps(TimeRange(row[0], row[1])):
+                    raise NotFound("lock_slot", reason="reservation_conflict", label=row[2])
+            covered: list[CoveredRoutine] = []
+            for row in conn.execute(
+                """SELECT start_min, end_min, purpose FROM app_weekly_routines
+                WHERE site_id=? AND room_id=? AND weekday=?""",
+                (self.site_id, room_id, locked_date.weekday()),
+            ):
+                routine_range = TimeRange(row[0], row[1])
+                intersection = routine_range.clipped_to(time_range)
+                if intersection is not None:
+                    covered.append(
+                        CoveredRoutine(row["purpose"], routine_range, intersection)
+                    )
+            slot = LockedSlot(room_id, locked_date, time_range, label)
+            conn.execute(
+                """INSERT INTO app_locked_slots
+                (id, site_id, room_id, locked_date, start_min, end_min, label)
+                VALUES(?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid4()),
+                    self.site_id,
+                    room_id,
+                    locked_date.isoformat(),
+                    time_range.start,
+                    time_range.end,
+                    label,
+                ),
+            )
+            return slot, covered
+
+    def remove_lock(self, room_id: str, locked_date: date, time_range: TimeRange) -> bool:
+        with self._write() as conn:
+            cursor = conn.execute(
+                """DELETE FROM app_locked_slots
+                WHERE site_id=? AND room_id=? AND locked_date=? AND start_min=? AND end_min=?""",
+                (self.site_id, room_id, locked_date.isoformat(), time_range.start, time_range.end),
             )
             return cursor.rowcount > 0
 

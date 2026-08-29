@@ -113,6 +113,25 @@ class Routine:
 
 
 @dataclass(frozen=True)
+class LockedSlot:
+    """单日临时锁定时段（app_locked_slots）。"""
+
+    room_id: str
+    locked_date: date
+    time_range: TimeRange
+    label: str
+
+
+@dataclass(frozen=True)
+class CoveredRoutine:
+    """被锁定时段覆盖的周常片段（仅用于提示；周常记录本身不删除）。"""
+
+    purpose: str
+    original: TimeRange
+    covered: TimeRange
+
+
+@dataclass(frozen=True)
 class OperationResult:
     ok: bool
     code: str

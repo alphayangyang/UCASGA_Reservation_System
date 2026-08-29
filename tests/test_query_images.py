@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from datetime import date
+from datetime import date, datetime
 
 from qqbot.domain.models import DateRange, Occupancy, OperationResult, TimeRange
 from qqbot.interfaces.qq.media_uploader import MD5_10M_BYTES, QQMediaUploader
 from qqbot.interfaces.qq.presenter import QQPresenter
-from qqbot.presentation.timeline import ScheduleImageRenderer, build_timeline_view
+from qqbot.presentation.timeline import (
+    ScheduleImageRenderer,
+    build_timeline_view,
+    current_theme,
+)
 
 
 def schedule_result() -> OperationResult:
@@ -49,7 +53,7 @@ def schedule_result() -> OperationResult:
 def test_timeline_view_and_html_are_renderable(yql_config) -> None:
     result = schedule_result()
     view = build_timeline_view(yql_config, result)
-    html = ScheduleImageRenderer(yql_config).render_html(result)
+    html = ScheduleImageRenderer(yql_config).render_html(result, theme="light")
 
     assert view["period"] == "2026-08-10 ～ 2026-08-11"
     assert len(view["rows"]) == 2
@@ -59,6 +63,69 @@ def test_timeline_view_and_html_are_renderable(yql_config) -> None:
     assert "&lt;b&gt;合唱&lt;/b&gt;" in html
     assert "21:00-22:30" in html
     assert "暂无占用" in html
+    # 类型信息不再以「周常：/锁定：」前缀写进块内（由颜色 + 图例表达）
+    assert "周常：" not in html
+    assert "锁定：" not in html
+
+
+def test_timeline_theme_switches_day_and_night(yql_config) -> None:
+    renderer = ScheduleImageRenderer(yql_config)
+    result = schedule_result()
+    light = renderer.render_html(result, theme="light")
+    dark = renderer.render_html(result, theme="dark")
+
+    assert 'class="theme-light"' in light
+    assert 'class="theme-dark"' in dark
+    # 深色主题变量存在（页面背景/卡片颜色不同）
+    assert "--page-bg: #0e1524" in dark
+    assert "--page-bg: #eef1f7" in light
+    # 主题缺失时按当前时刻自动选择
+    auto = renderer.render_html(result)
+    assert 'class="theme-' in auto
+
+
+def test_current_theme_boundaries() -> None:
+    def at(hour: int) -> datetime:
+        return datetime(2026, 8, 10, hour, 0)
+
+    # 19:00 ~ 次日 07:00 深色，其余浅色
+    assert current_theme(at(6)) == "dark"
+    assert current_theme(at(7)) == "light"
+    assert current_theme(at(12)) == "light"
+    assert current_theme(at(18)) == "light"
+    assert current_theme(at(19)) == "dark"
+    assert current_theme(at(23)) == "dark"
+
+
+def test_timeline_day_rows_alternate_by_date(yql_config) -> None:
+    result = schedule_result()
+    view = build_timeline_view(yql_config, result)
+
+    # 两天交替：同一天的所有房间行共享同一 day_alt（此处单房间）
+    assert [row["day_alt"] for row in view["rows"]] == [False, True]
+    # 三天序列验证交替
+    period = DateRange(date(2026, 8, 10), date(2026, 8, 12))
+    three = OperationResult.success(
+        "schedule_range",
+        date_range=period,
+        room_ids=["yql-main"],
+        days=[
+            {"date": date(2026, 8, 10), "offset": 0, "occupancies": [], "admin_view": False},
+            {"date": date(2026, 8, 11), "offset": 1, "occupancies": [], "admin_view": False},
+            {"date": date(2026, 8, 12), "offset": 2, "occupancies": [], "admin_view": False},
+        ],
+    )
+    three_view = build_timeline_view(yql_config, three)
+    assert [row["day_alt"] for row in three_view["rows"]] == [False, True, False]
+
+
+def test_renderer_inlines_woff2_fonts(yql_config) -> None:
+    """字体以 data URI 内联进 HTML，无系统字体服务器也能渲染中文。"""
+    renderer = ScheduleImageRenderer(yql_config)
+    html = renderer.render_html(schedule_result(), theme="light")
+
+    assert "data:font/woff2;base64," in html
+    assert "Noto Sans SC" in html
 
 
 def test_text_fallback_supports_multiple_days(yql_config) -> None:

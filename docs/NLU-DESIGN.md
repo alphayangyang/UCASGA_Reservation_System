@@ -101,11 +101,11 @@ NLU 只替换 Parser 内部的「文本 → ParsedIntent」环节，**下游每�
 
 ```python
 try:
-    intent = self._try_regular(raw_text)   # 现有正则
+    intent = self._try_regular(raw_text)  # 现有正则
 except ParseError:
-    intent = self._try_nlu(raw_text)       # NLU，全部异常吞掉
-    if intent is None:                     # NLU 失败/异常/低置信
-        raise ParseError("help")           # 回到原来的行为
+    intent = self._try_nlu(raw_text)  # NLU，全部异常吞掉
+    if intent is None:  # NLU 失败/异常/低置信
+        raise ParseError("help")  # 回到原来的行为
 ```
 
 NLU 内任何异常（模型损坏、内存不足、规则 bug）都被吞掉并 fallback 到 help——**bot 主链路永远不受影响**。

@@ -30,6 +30,14 @@ class GroupBindingStore:
             row = conn.execute("SELECT bot_id FROM group_bindings WHERE group_id=?", (group_id,)).fetchone()
         return str(row[0]) if row else None
 
+    def groups_for(self, bot_id: str) -> list[str]:
+        """该站点绑定的全部群 ID；用于定时任务主动推送。"""
+        with closing(sqlite3.connect(self.path)) as conn:
+            rows = conn.execute(
+                "SELECT group_id FROM group_bindings WHERE bot_id=? ORDER BY group_id", (bot_id,)
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def set(self, group_id: str, bot_id: str) -> None:
         with closing(sqlite3.connect(self.path, timeout=10)) as conn:
             conn.execute("PRAGMA busy_timeout=10000")

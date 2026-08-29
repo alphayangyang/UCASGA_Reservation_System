@@ -64,8 +64,7 @@ def test_collect_suggestions_frequency_gate(yqh_config, tmp_path) -> None:
     anomalies = tmp_path / "anomalies.jsonl"
     # 只出现 1 次 → 低于频次门槛 → 无建议
     anomalies.write_text(
-        json.dumps({"text": "x", "bot_id": "yqh", "reason": "resolver", "room_reference": "303琴房"})
-        + "\n",
+        json.dumps({"text": "x", "bot_id": "yqh", "reason": "resolver", "room_reference": "303琴房"}) + "\n",
         encoding="utf-8",
     )
     assert opt.collect_suggestions({"yqh": yqh_config}, anomalies) == []
@@ -112,9 +111,7 @@ def test_run_auto_optimize_manual_flow(yqh_config, isolated) -> None:
         json.dumps(
             {
                 "version": 1,
-                "room_aliases": {
-                    "yqh": [{"alias": "304外面的房间", "room_id": "yqh-304b", "note": "测试"}]
-                },
+                "room_aliases": {"yqh": [{"alias": "304外面的房间", "room_id": "yqh-304b", "note": "测试"}]},
             }
         ),
         encoding="utf-8",

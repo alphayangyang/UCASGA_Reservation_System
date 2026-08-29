@@ -101,6 +101,10 @@ python3 -m venv .venv
 ## 修改查询图片
 
 - 查询数据结构在 `presentation/timeline.py` 中生成，模板只负责布局；
+- 新增 `day_alt`（按日期交替底色）等 ViewModel 字段时，同步更新模板与 `tests/test_query_images.py`；
+- 修改模板配色时，注意 `theme-light` / `theme-dark` 两套 CSS 变量都要覆盖（`current_theme()` 按上海时区 19:00–07:00 切换深色）；
+- 替换中文字体时，把 woff2 放入 `presentation/templates/fonts/`（渲染器自动内联），并保持 `pyproject.toml` 的 package-data 包含 `templates/fonts/*.woff2`；
+- 改动块布局后，运行 `scripts/preview_image.py --theme light|dark` 目检效果；
 - QQ 上传协议集中在 `interfaces/qq/media_uploader.py`；
 - 不要让模板重新计算权限、业务日或空闲时段；
 - 模板必须保持 HTML 自动转义；

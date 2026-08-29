@@ -288,10 +288,24 @@ piano_room_yql.db.pre_v3_YYYYMMDD_HHMMSS.bak
 | 删除周常 | `#删除周常 周一 303 21-23` |
 | 查询周常 | `#查询周常 [周一]` |
 | 手动播报次日周常 | `#播报周常` |
+| 单日临时锁定 | `#锁定 303 19-21 2026-09-10 活动` |
+| 解除锁定 | `#解锁 303 19-21 2026-09-10` |
 | 备份用户 | `#备份用户` |
 | 恢复用户 | `#恢复用户` |
 
 周常和播报受站点功能开关控制。
+
+## 定时主动播报
+
+按站点功能开关在 `on_ready` 挂载（各站可独立启停，详见开发手册 5.2）：
+
+| 时间 | 内容 | 开关 |
+| --- | --- | --- |
+| 每天 `booking.routine_broadcast.time`（默认 21:00） | 从明天起 `days` 天（默认 1，可配 1～7）的周常占用（图片，失败回退文字） | `features.broadcast` 且 `features.weekly_routine` |
+| 每天 `silent_period.start`（默认 22:00） | 系统时间文字报时（抢琴房对时） | `features.clock_announce` |
+| 各站静默期结束 `silent_period.end`（如 22:15） | 次日预约情况（图片，失败回退文字） | `features.silent_end_report` |
+
+播报推送到 `data/control.db` 中该站点绑定的全部群；图片链路失败自动回退文字。播报时刻全部由 YAML 配置驱动，改配置即生效。
 
 ## 配置
 

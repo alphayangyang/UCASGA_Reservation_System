@@ -3,149 +3,259 @@
 <head>
   <meta charset="utf-8">
   <style>
+    @font-face {
+      font-family: "Noto Sans SC";
+      src: url("{{ font_400 }}") format("woff2");
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Noto Sans SC";
+      src: url("{{ font_700 }}") format("woff2");
+      font-weight: 700;
+      font-display: swap;
+    }
+    /* ── 昼夜主题变量（Soft Flat：扁平 + 柔和渐变 + 细边框）── */
+    :root {
+      --page-bg: #eef1f7;
+      --card-bg: #ffffff;
+      --card-border: #e3e8f0;
+      --text: #172033;
+      --text-muted: #5a6478;
+      --text-faint: #98a2b3;
+      --row-border: #eef1f6;
+      --row-alt: #f6f8fc;
+      --legend-bg: #fafbfe;
+      --track-line-strong: rgba(145, 158, 178, .16);
+      --track-line-weak: rgba(145, 158, 178, .07);
+      --shadow: 0 10px 30px rgba(30, 47, 75, .10);
+      --hero-a: #3a5bd9;
+      --hero-b: #5e5bd6;
+      --hero-c: #845ec2;
+    }
+    body.theme-dark {
+      --page-bg: #0e1524;
+      --card-bg: #161e30;
+      --card-border: #26304a;
+      --text: #e8edf6;
+      --text-muted: #9aa7bf;
+      --text-faint: #64708c;
+      --row-border: #202a40;
+      --row-alt: #1b2438;
+      --legend-bg: #1a2337;
+      --track-line-strong: rgba(150, 165, 195, .18);
+      --track-line-weak: rgba(150, 165, 195, .08);
+      --shadow: 0 12px 34px rgba(0, 0, 0, .45);
+      --hero-a: #2b3f9e;
+      --hero-b: #43388f;
+      --hero-c: #5c3d8e;
+    }
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; background: #eef2f7; }
+    html, body { margin: 0; padding: 0; background: var(--page-bg); }
     body {
       width: 1240px;
       padding: 20px;
-      color: #172033;
-      font-family: "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
     #schedule {
       width: 1200px;
-      padding: 26px 30px 30px;
-      border: 1px solid #dce3ec;
+      border: 1px solid var(--card-border);
       border-radius: 20px;
-      background: #ffffff;
-      box-shadow: 0 10px 32px rgba(30, 47, 75, 0.10);
+      background: var(--card-bg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
     }
-    .header {
+    /* ── 头部横幅：柔和渐变 ── */
+    .hero {
+      background: linear-gradient(120deg, var(--hero-a) 0%, var(--hero-b) 55%, var(--hero-c) 100%);
+      padding: 24px 30px 18px;
+      color: #fff;
       display: flex;
       align-items: flex-end;
       justify-content: space-between;
-      margin-bottom: 20px;
+      gap: 16px;
     }
-    h1 { margin: 0; font-size: 27px; line-height: 1.25; }
-    .subtitle { margin-top: 7px; color: #637083; font-size: 15px; }
-    .legend { display: flex; gap: 12px; color: #637083; font-size: 14px; }
+    .hero-left { min-width: 0; }
+    .site-tag {
+      display: inline-block;
+      margin-bottom: 6px;
+      padding: 2px 10px;
+      border: 1px solid rgba(255,255,255,.45);
+      border-radius: 999px;
+      font-size: 12px;
+      letter-spacing: 2px;
+      opacity: .92;
+    }
+    h1 { margin: 0; font-size: 26px; line-height: 1.25; font-weight: 700; }
+    .subtitle { margin-top: 5px; font-size: 14px; opacity: .88; }
+    .hero-right { text-align: right; flex-shrink: 0; }
+    .badge {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 999px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    /* ── 图例 ── */
+    .legend {
+      display: flex;
+      gap: 14px;
+      padding: 12px 30px;
+      background: var(--legend-bg);
+      border-bottom: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
     .legend span::before {
       display: inline-block;
       width: 10px;
       height: 10px;
-      margin-right: 5px;
+      margin-right: 6px;
       border-radius: 3px;
       content: "";
+      vertical-align: -1px;
     }
-    .legend .reservation::before { background: #5774e8; }
-    .legend .routine::before, .legend .lock::before { background: #ef9a45; }
-    .legend .free::before { background: #42b982; }
-    .axis, .row { display: grid; grid-template-columns: 195px 1fr; }
-    .axis { height: 34px; color: #7b8797; font-size: 12px; }
+    .legend .reservation::before { background: #5b7cf9; }
+    .legend .routine::before { background: #f6a24b; }
+    .legend .lock::before { background: #9b6cf3; }
+    .legend .free::before { background: #43c98e; }
+    /* ── 时间轴 ── */
+    .body { padding: 18px 30px 6px; }
+    .axis, .row { display: grid; grid-template-columns: 190px 1fr; }
+    .axis { height: 30px; color: var(--text-faint); font-size: 12px; }
     .axis-track, .track { position: relative; }
     .tick {
       position: absolute;
-      bottom: 5px;
+      bottom: 4px;
       transform: translateX(-50%);
       white-space: nowrap;
     }
-    .row { min-height: 66px; border-top: 1px solid #e8edf3; }
+    .row { min-height: 72px; border-top: 1px solid var(--row-border); }
+    .row.alt { background: var(--row-alt); }
     .row-label {
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding-right: 16px;
+      padding-right: 14px;
     }
-    .row-label strong { font-size: 15px; }
-    .row-label span { margin-top: 4px; color: #718096; font-size: 13px; }
+    .row-label strong { font-size: 14.5px; font-weight: 700; }
+    .row-label span { margin-top: 3px; color: var(--text-muted); font-size: 12.5px; }
     .track {
-      min-height: 66px;
+      min-height: 72px;
       background-image:
-        linear-gradient(to right, rgba(145, 158, 178, .18) 1px, transparent 1px),
-        linear-gradient(to right, rgba(145, 158, 178, .08) 1px, transparent 1px);
+        linear-gradient(to right, var(--track-line-strong) 1px, transparent 1px),
+        linear-gradient(to right, var(--track-line-weak) 1px, transparent 1px);
       background-position: left top;
       background-size: 6.25% 100%, 3.125% 100%;
     }
+    /* ── 占用块：扁平 + 柔和渐变 + 细描边 ── */
     .block {
       position: absolute;
-      top: 10px;
-      min-width: 2px;
-      height: 45px;
-      overflow: hidden;
-      padding: 5px 8px;
-      border-radius: 8px;
+      top: 11px;
+      left: 0;
+      min-width: 3px;
+      min-height: 50px;
+      padding: 6px 9px 20px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, .22);
       color: #fff;
-      white-space: nowrap;
+      box-shadow: 0 2px 6px rgba(31, 45, 80, .14);
     }
-    .block.reservation { background: #5774e8; }
-    .block.routine, .block.lock { background: #ef9a45; }
-    .block.free { background: #42b982; }
+    .block.reservation { background: linear-gradient(135deg, #5b7cf9 0%, #4b5fd6 100%); }
+    .block.routine    { background: linear-gradient(135deg, #ffb45e 0%, #f08a2e 100%); }
+    .block.lock       { background: linear-gradient(135deg, #a882f5 0%, #8050d8 100%); }
+    .block.free       { background: linear-gradient(135deg, #5fd6a4 0%, #35b97f 100%); }
+    /* 内容名：固定 13px，允许换行，不省略 */
     .block .name {
-      overflow: hidden;
+      display: block;
       font-size: 13px;
       font-weight: 700;
+      line-height: 1.35;
+      overflow-wrap: break-word;
+    }
+    /* 时间：固定 11px，固定在块底部左下角 */
+    .block .time {
+      position: absolute;
+      bottom: 5px;
+      left: 9px;
+      right: 9px;
+      font-size: 11px;
+      opacity: .92;
+      overflow: hidden;
+      white-space: nowrap;
       text-overflow: ellipsis;
     }
-    .block .time { margin-top: 2px; font-size: 11px; opacity: .92; }
     .empty {
       position: absolute;
-      top: 22px;
+      top: 50%;
       left: 12px;
-      color: #98a2b3;
-      font-size: 13px;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      font-size: 12.5px;
     }
     .footer {
-      margin-top: 18px;
-      color: #8792a2;
+      padding: 14px 30px 18px;
+      color: var(--text-faint);
       font-size: 12px;
       text-align: right;
     }
   </style>
 </head>
-<body>
+<body class="theme-{{ theme }}">
   <main id="schedule">
-    <div class="header">
-      <div>
-        <h1>{{ site_name }} · {{ title }}</h1>
+    <div class="hero">
+      <div class="hero-left">
+        <span class="site-tag">{{ site_name }}</span>
+        <h1>{{ title }}</h1>
         <div class="subtitle">{{ period }} · 开放 {{ opening }}–{{ closing }}</div>
       </div>
-      <div class="legend">
-        {% if mode == "schedule" %}
-          <span class="reservation">预约</span>
-          <span class="routine">周常 / 锁定</span>
-        {% else %}
-          <span class="free">可预约</span>
-        {% endif %}
+      <div class="hero-right">
+        <span class="badge">{% if mode == "schedule" %}共 {{ row_count }} 行日程{% else %}可预约时段{% endif %}</span>
       </div>
     </div>
-    <div class="axis">
-      <div></div>
-      <div class="axis-track">
-        {% for tick in ticks %}
-          <span class="tick" style="left: {{ tick.left }}%">{{ tick.label }}</span>
-        {% endfor %}
-      </div>
+    <div class="legend">
+      {% if mode == "schedule" %}
+        <span class="reservation">预约</span>
+        <span class="routine">周常</span>
+        <span class="lock">锁定</span>
+      {% else %}
+        <span class="free">可预约</span>
+      {% endif %}
     </div>
-    {% for row in rows %}
-      <div class="row">
-        <div class="row-label">
-          <strong>{{ row.date_label }}{% if row.offset is not none %}（+{{ row.offset }}）{% endif %}</strong>
-          <span>{{ row.room }}</span>
-        </div>
-        <div class="track"
-             style="background-size: {{ hour_grid }}% 100%, {{ half_hour_grid }}% 100%">
-          {% if not row.blocks %}
-            <span class="empty">{% if mode == "schedule" %}暂无占用{% else %}无空闲时段{% endif %}</span>
-          {% endif %}
-          {% for block in row.blocks %}
-            <div class="block {{ block.kind }}"
-                 style="left: {{ block.left }}%; width: {{ block.width }}%">
-              <div class="name">{{ block.label }}</div>
-              <div class="time">{{ block.time }}</div>
-            </div>
+    <div class="body">
+      <div class="axis">
+        <div></div>
+        <div class="axis-track">
+          {% for tick in ticks %}
+            <span class="tick" style="left: {{ tick.left }}%">{{ tick.label }}</span>
           {% endfor %}
         </div>
       </div>
-    {% endfor %}
+      {% for row in rows %}
+        <div class="row{% if row.day_alt %} alt{% endif %}">
+          <div class="row-label">
+            <strong>{{ row.date_label }}{% if row.offset is not none %}（+{{ row.offset }}）{% endif %}</strong>
+            <span>{{ row.room }}</span>
+          </div>
+          <div class="track"
+               style="background-size: {{ hour_grid }}% 100%, {{ half_hour_grid }}% 100%">
+            {% if not row.blocks %}
+              <span class="empty">{% if mode == "schedule" %}暂无占用{% else %}无空闲时段{% endif %}</span>
+            {% endif %}
+            {% for block in row.blocks %}
+              <div class="block {{ block.kind }}"
+                   style="left: {{ block.left }}%; width: {{ block.width }}%">
+                <div class="name">{{ block.label }}</div>
+                <div class="time">{{ block.time }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
     <div class="footer">半小时为最小预约单位 · 查询生成时间以机器人收到指令为准</div>
   </main>
 </body>

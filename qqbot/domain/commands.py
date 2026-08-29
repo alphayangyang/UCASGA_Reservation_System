@@ -115,6 +115,23 @@ class BroadcastRoutines:
 
 
 @dataclass(frozen=True)
+class AddLock:
+    """单日临时锁定时段（app_locked_slots）：一次性占用，不重复。"""
+
+    room_id: str
+    reserve_date: date
+    time_range: TimeRange
+    label: str
+
+
+@dataclass(frozen=True)
+class RemoveLock:
+    room_id: str
+    reserve_date: date
+    time_range: TimeRange
+
+
+@dataclass(frozen=True)
 class BackupUsers:
     pass
 
@@ -142,6 +159,8 @@ Command: TypeAlias = (
     | RemoveRoutine
     | ListRoutines
     | BroadcastRoutines
+    | AddLock
+    | RemoveLock
     | BackupUsers
     | RestoreUsers
 )

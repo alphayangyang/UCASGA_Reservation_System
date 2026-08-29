@@ -49,9 +49,7 @@ def render_suggestions(configs) -> str:
         lines.append("| 站点 | 别名 | room_id | 备注 |")
         lines.append("| --- | --- | --- | --- |")
         for entry in manual:
-            lines.append(
-                f"| {entry['bot_id']} | {entry['alias']} | {entry['room_id']} | {entry['note']} |"
-            )
+            lines.append(f"| {entry['bot_id']} | {entry['alias']} | {entry['room_id']} | {entry['note']} |")
     suggestions = collect_suggestions(configs, NLU_DATA_DIR / "anomalies.jsonl")
     lines.append("")
     lines.append(f"## 2. 高频新表达建议（频次 ≥3 且相似度 ≥0.6）：{len(suggestions)} 条")

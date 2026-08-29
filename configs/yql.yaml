@@ -52,6 +52,8 @@ features:
   weekly_routine: false
   broadcast: false
   nlu_enabled: false
+  clock_announce: true
+  silent_end_report: true
 
 query:
   max_range_days: 7

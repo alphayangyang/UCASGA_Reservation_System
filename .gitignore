@@ -14,3 +14,5 @@ botpy.log
 dist/
 *.zip
 qqbot/nlu/data/
+# 开发预览产物（scripts/preview_image.py 渲染的 PNG）
+scripts/preview/

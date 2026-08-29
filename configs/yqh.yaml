@@ -37,6 +37,9 @@ booking:
   silent_period:
     start: "22:00"
     end: "22:15"
+  routine_broadcast:
+    time: "21:00"
+    days: 7
   advance_offsets:
     user: 0
     admin: 0
@@ -56,6 +59,8 @@ features:
   weekly_routine: true
   broadcast: true
   nlu_enabled: false
+  clock_announce: true
+  silent_end_report: true
 
 query:
   max_range_days: 7

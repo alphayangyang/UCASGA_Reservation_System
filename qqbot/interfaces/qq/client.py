@@ -19,6 +19,12 @@ from qqbot.domain.models import ExternalIdentity, OperationResult, RequestContex
 from qqbot.infrastructure.config import SiteConfig, load_all_configs
 from qqbot.infrastructure.group_bindings import GroupBindingStore
 from qqbot.infrastructure.sqlite_repository import SQLiteBookingRepository
+from qqbot.interfaces.qq.broadcaster import (
+    ClockAnnounceJob,
+    ProactiveSender,
+    RoutineBroadcastJob,
+    SilentEndReportJob,
+)
 from qqbot.interfaces.qq.media_uploader import QQMediaUploader
 from qqbot.interfaces.qq.parser import ParsedIntent, QQCommandParser
 from qqbot.interfaces.qq.presenter import QQPresenter
@@ -161,6 +167,7 @@ class PianoBotClient(botpy.Client):
                     id="nlu_nightly_annotate",
                     replace_existing=True,
                 )
+            self._register_broadcast_jobs()
             self.scheduler.start()
 
     async def close(self) -> None:
@@ -183,6 +190,53 @@ class PianoBotClient(botpy.Client):
                     logger.info("站点 %s 归档并清理 %s 条旧预约", bot_id, count)
             except Exception:
                 logger.exception("站点 %s 的历史数据清理失败", bot_id)
+
+    def _register_broadcast_jobs(self) -> None:
+        """按站点配置挂载定时播报（逻辑在 qqbot/interfaces/qq/broadcaster.py）。
+
+        每个站点独立开关，时刻全部来自 YAML：
+        - features.broadcast 且 features.weekly_routine → 按 booking.routine_broadcast.time
+          每天播报未来 days 天（从明天起）的周常占用；
+        - features.clock_announce → 静默期开始时刻（silent_period.start）文字报时；
+        - features.silent_end_report → 静默期结束时刻（silent_period.end）播报次日预约情况。
+        """
+
+        if self.scheduler is None:
+            return
+        sender = ProactiveSender(self.api, self.group_bindings)
+        for bot_id, config in self.configs.items():
+            application = self.dispatchers[bot_id].application
+            renderer = self.renderers.get(bot_id)
+            presenter = self.presenters[bot_id]
+
+            if config.features.broadcast and config.features.weekly_routine:
+                broadcast_time = config.routine_broadcast.time
+                self.scheduler.add_job(
+                    RoutineBroadcastJob(config, application, sender, renderer, presenter).run,
+                    "cron",
+                    hour=broadcast_time // 60,
+                    minute=broadcast_time % 60,
+                    id=f"routine_broadcast_{bot_id}",
+                    replace_existing=True,
+                )
+            if config.features.clock_announce:
+                self.scheduler.add_job(
+                    ClockAnnounceJob(config, sender).run,
+                    "cron",
+                    hour=config.silent_start // 60,
+                    minute=config.silent_start % 60,
+                    id=f"clock_announce_{bot_id}",
+                    replace_existing=True,
+                )
+            if config.features.silent_end_report:
+                self.scheduler.add_job(
+                    SilentEndReportJob(config, application, sender, renderer, presenter).run,
+                    "cron",
+                    hour=config.silent_end // 60,
+                    minute=config.silent_end % 60,
+                    id=f"silent_end_report_{bot_id}",
+                    replace_existing=True,
+                )
 
     async def _send(self, message: GroupMessage, content: str) -> None:
         await message._api.post_group_message(
