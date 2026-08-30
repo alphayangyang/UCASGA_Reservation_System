@@ -15,6 +15,7 @@ dependencies = [
   "aiohttp>=3.9",
   "Jinja2>=3.1",
   "playwright>=1.49",
+  "Pillow>=10.0",  # 查询图片 PNG 调色板量化（体积 -66%，缺失时自动跳过）
 ]
 
 [project.optional-dependencies]

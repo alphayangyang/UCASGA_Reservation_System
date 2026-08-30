@@ -25,7 +25,7 @@ def build_result(config, *, mode: str = "schedule") -> OperationResult:
     if mode == "schedule":
         return OperationResult.success(
             "schedule_range",
-            date_range=DateRange(date(2026, 8, 10), date(2026, 8, 12)),
+            date_range=DateRange(date(2026, 8, 10), date(2026, 8, 16)),
             room_ids=[room.id for room in config.rooms[:3]],
             days=[
                 {
@@ -51,6 +51,32 @@ def build_result(config, *, mode: str = "schedule") -> OperationResult:
                 {
                     "date": date(2026, 8, 12),
                     "offset": 2,
+                    "occupancies": [],
+                    "admin_view": False,
+                },
+                {
+                    "date": date(2026, 8, 13),
+                    "offset": 3,
+                    "occupancies": [],
+                    "admin_view": False,
+                },
+                {
+                    "date": date(2026, 8, 14),
+                    "offset": 4,
+                    "occupancies": [
+                        Occupancy(main.id, TimeRange(14 * 60, 16 * 60), "reservation", "王五"),
+                    ],
+                    "admin_view": False,
+                },
+                {
+                    "date": date(2026, 8, 15),
+                    "offset": 5,
+                    "occupancies": [],
+                    "admin_view": False,
+                },
+                {
+                    "date": date(2026, 8, 16),
+                    "offset": 6,
                     "occupancies": [],
                     "admin_view": False,
                 },
@@ -107,8 +133,8 @@ async def main() -> None:
                 html = renderer.render_html(result, theme=theme)
                 row_count = max(1, len(result.data["days"]) * len(result.data["room_ids"]))
                 page = await renderer._browser.new_page(
-                    viewport={"width": 1280, "height": min(16000, 260 + row_count * 78)},
-                    device_scale_factor=1.5,
+                    viewport={"width": 1820, "height": min(16000, 260 + row_count * 62)},
+                    device_scale_factor=1.2,
                 )
                 # 与 ScheduleImageRenderer.render 一致：先注册字体 route，再加载页面并
                 # 等待字体加载完成，否则虚拟 URL 字体请求失败 → 豆腐块
@@ -118,6 +144,8 @@ async def main() -> None:
                 await ScheduleImageRenderer._fit_row_heights(page)
                 png = await page.locator("#schedule").screenshot(type="png")
                 await page.close()
+                # 与生产 render() 一致：PNG 调色板量化
+                png = renderer._optimize_png(png)
                 suffix = theme or "auto"
                 path = out / f"preview_{mode}_{name}_{suffix}.png"
                 path.write_bytes(png)

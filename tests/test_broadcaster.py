@@ -351,6 +351,8 @@ def test_client_registers_broadcast_jobs_per_features(
         "silent_end_report_yqh",
         "clock_announce_yql",
         "silent_end_report_yql",
+        "image_cache_prewarm_business_day",
+        "image_cache_prewarm_theme",
     }
     assert ids["routine_broadcast_yqh"][1] == "cron"
     assert ids["routine_broadcast_yqh"][2]["hour"] == 21

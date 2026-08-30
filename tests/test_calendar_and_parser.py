@@ -193,3 +193,10 @@ def test_admin_command_matrix(yql_config, text: str, expected_type: type) -> Non
         datetime(2026, 8, 7, 12, tzinfo=SHANGHAI_TZ),
     )
     assert isinstance(command, expected_type)
+
+
+def test_parser_recognizes_refresh_images_admin_command() -> None:
+    """#刷新图片 → admin 意图（client 层处理，不生成业务 Command）。"""
+    intent = QQCommandParser().parse("#刷新图片")
+    assert intent.operation == "refresh_images"
+    assert intent.admin is True

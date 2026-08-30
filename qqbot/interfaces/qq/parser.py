@@ -214,6 +214,11 @@ class QQCommandParser:
                 raise ParseError("bind_config")
             return ParsedIntent("bind_config", {"bot_id": remainder}, True)
 
+        if action == "刷新图片":
+            if remainder:
+                raise ParseError(action)
+            return ParsedIntent("refresh_images", admin=True)
+
         if action in {"备份用户", "恢复用户", "播报周常"}:
             if remainder:
                 raise ParseError(action)

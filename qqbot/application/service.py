@@ -390,6 +390,25 @@ class BookingApplication:
             days=days,
         )
 
+    def schedule_range_system(self, date_range: DateRange) -> OperationResult:
+        """无身份系统读（预渲染/播报用）：多日 schedule_range，含全部占用。"""
+        return self._schedule_range_result(date_range, None, None)
+
+    def free_slots_range_system(self, date_range: DateRange) -> OperationResult:
+        """无身份系统读（预渲染用）：多日 free_slots_range，全部房间。"""
+        room_ids = [room.id for room in self.config.rooms]
+        opening = TimeRange(self.config.open_minutes, self.config.close_minutes)
+        days = [
+            {"date": target, "offset": None, "slots": self.repository.free_slots(target, room_ids, opening)}
+            for target in date_range.dates()
+        ]
+        return OperationResult.success(
+            "free_slots_range",
+            date_range=date_range,
+            room_ids=room_ids,
+            days=days,
+        )
+
     def _bind(self, context: RequestContext, command: BindUser) -> OperationResult:
         if not (1 <= len(command.display_name) <= 10) or not re.fullmatch(
             r"[\u4e00-\u9fff]+", command.display_name

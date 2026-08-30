@@ -56,13 +56,17 @@ def test_timeline_view_and_html_are_renderable(yql_config) -> None:
     html = ScheduleImageRenderer(yql_config).render_html(result, theme="light")
 
     assert view["period"] == "2026-08-10 ～ 2026-08-11"
+    # 8-10 有占用 → 1 行；8-11 全站无占用 → 折叠成 1 行摘要
     assert len(view["rows"]) == 2
     assert view["rows"][0]["blocks"][0]["label"] == "小明同学"
+    assert view["rows"][1]["collapsed"] is True
+    assert view["rows"][1]["date_label"] == "8月11日 · 周二"
     assert "王小明同学" not in html
     assert "<b>合唱</b>" not in html
     assert "&lt;b&gt;合唱&lt;/b&gt;" in html
     assert "21:00-22:30" in html
-    assert "暂无占用" in html
+    assert "暂无占用" not in html  # 单房间全空日被折叠，不再有逐房间「暂无占用」
+    assert "全站无占用" in html
     # 类型信息不再以「周常：/锁定：」前缀写进块内（由颜色 + 图例表达）
     assert "周常：" not in html
     assert "锁定：" not in html
@@ -101,22 +105,66 @@ def test_timeline_day_rows_alternate_by_date(yql_config) -> None:
     result = schedule_result()
     view = build_timeline_view(yql_config, result)
 
-    # 两天交替：同一天的所有房间行共享同一 day_alt（此处单房间）
+    # 8-10 有占用 → 正常行(day_alt=False)；8-11 全空 → 折叠行(day_alt=True)
     assert [row["day_alt"] for row in view["rows"]] == [False, True]
-    # 三天序列验证交替
+    # 三天序列：8-10 有占用(展开) + 8-11~8-12 连续空日(折叠成一行)
     period = DateRange(date(2026, 8, 10), date(2026, 8, 12))
     three = OperationResult.success(
         "schedule_range",
         date_range=period,
         room_ids=["yql-main"],
         days=[
-            {"date": date(2026, 8, 10), "offset": 0, "occupancies": [], "admin_view": False},
+            {
+                "date": date(2026, 8, 10),
+                "offset": 0,
+                "occupancies": [
+                    Occupancy("yql-main", TimeRange(8 * 60, 9 * 60), "reservation", "测试同学"),
+                ],
+                "admin_view": False,
+            },
             {"date": date(2026, 8, 11), "offset": 1, "occupancies": [], "admin_view": False},
             {"date": date(2026, 8, 12), "offset": 2, "occupancies": [], "admin_view": False},
         ],
     )
     three_view = build_timeline_view(yql_config, three)
-    assert [row["day_alt"] for row in three_view["rows"]] == [False, True, False]
+    assert [row["day_alt"] for row in three_view["rows"]] == [False, True]
+    assert three_view["rows"][1]["collapsed"] is True
+    assert three_view["rows"][1]["date_label"] == "8月11日 ～ 8月12日"
+
+
+def test_collapsed_empty_days_only_for_schedule(yql_config) -> None:
+    """schedule 模式：连续全空日折叠成一行摘要；free 模式不折叠。"""
+
+    period = DateRange(date(2026, 8, 10), date(2026, 8, 13))
+    days = [
+        {"date": date(2026, 8, 10), "offset": 0, "occupancies": [], "admin_view": False},
+        {"date": date(2026, 8, 11), "offset": 1, "occupancies": [], "admin_view": False},
+        {"date": date(2026, 8, 12), "offset": 2, "occupancies": [], "admin_view": False},
+        {"date": date(2026, 8, 13), "offset": 3, "occupancies": [], "admin_view": False},
+    ]
+    result = OperationResult.success(
+        "schedule_range", date_range=period, room_ids=["yql-main"], days=days
+    )
+    view = build_timeline_view(yql_config, result)
+    # 4 个连续空日全部折叠成一行
+    assert len(view["rows"]) == 1
+    assert view["rows"][0]["collapsed"] is True
+    assert view["rows"][0]["date_label"] == "8月10日 ～ 8月13日"
+
+    # free 模式：即使 slots 为空也不折叠（每房间仍一行）
+    free_days = [
+        {"date": date(2026, 8, 10), "offset": 0, "slots": {"yql-main": []}},
+        {"date": date(2026, 8, 11), "offset": 1, "slots": {"yql-main": []}},
+    ]
+    free_result = OperationResult.success(
+        "free_slots_range",
+        date_range=DateRange(date(2026, 8, 10), date(2026, 8, 11)),
+        room_ids=["yql-main"],
+        days=free_days,
+    )
+    free_view = build_timeline_view(yql_config, free_result)
+    assert len(free_view["rows"]) == 2
+    assert all(not row.get("collapsed") for row in free_view["rows"])
 
 
 def test_renderer_fonts_loaded_via_virtual_url(yql_config) -> None:

@@ -32,6 +32,14 @@
       --hero-a: #3a5bd9;
       --hero-b: #5e5bd6;
       --hero-c: #845ec2;
+      --block-text: #26324a;
+      --block-muted: rgba(38, 50, 74, .68);
+      --block-border: rgba(38, 50, 74, .16);
+      --block-shadow: rgba(31, 45, 80, .10);
+      --block-reservation: #dbe4ff;
+      --block-routine: #ffeedb;
+      --block-lock: #ece4ff;
+      --block-free: #dcf5e9;
     }
     body.theme-dark {
       --page-bg: #0e1524;
@@ -49,17 +57,25 @@
       --hero-a: #2b3f9e;
       --hero-b: #43388f;
       --hero-c: #5c3d8e;
+      --block-text: #ffffff;
+      --block-muted: rgba(255, 255, 255, .82);
+      --block-border: rgba(255, 255, 255, .22);
+      --block-shadow: rgba(0, 0, 0, .30);
+      --block-reservation: #2b3f9e;
+      --block-routine: #9e551f;
+      --block-lock: #6a4f9e;
+      --block-free: #205a44;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: var(--page-bg); }
     body {
-      width: 1240px;
+      width: 1800px;
       padding: 20px;
       color: var(--text);
       font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
     }
     #schedule {
-      width: 1200px;
+      width: 1760px;
       border: 1px solid var(--card-border);
       border-radius: 20px;
       background: var(--card-bg);
@@ -118,13 +134,13 @@
       content: "";
       vertical-align: -1px;
     }
-    .legend .reservation::before { background: #5b7cf9; }
-    .legend .routine::before { background: #f6a24b; }
-    .legend .lock::before { background: #9b6cf3; }
-    .legend .free::before { background: #43c98e; }
+    .legend .reservation::before { background: var(--block-reservation); border: 1px solid var(--block-border); }
+    .legend .routine::before { background: var(--block-routine); border: 1px solid var(--block-border); }
+    .legend .lock::before { background: var(--block-lock); border: 1px solid var(--block-border); }
+    .legend .free::before { background: var(--block-free); border: 1px solid var(--block-border); }
     /* ── 时间轴 ── */
     .body { padding: 18px 30px 6px; }
-    .axis, .row { display: grid; grid-template-columns: 190px 1fr; }
+    .axis, .row { display: grid; grid-template-columns: 150px 1fr; }
     .axis { height: 30px; color: var(--text-faint); font-size: 12px; }
     .axis-track, .track { position: relative; }
     .tick {
@@ -133,41 +149,102 @@
       transform: translateX(-50%);
       white-space: nowrap;
     }
-    .row { min-height: 72px; border-top: 1px solid var(--row-border); }
+    /* 日期分组头：横跨两列，日期只出现一次；整块纯色圆角胶囊 + 白字。
+       用纯色而非渐变——256 色调色板量化无法承载平滑渐变（必然色带断层）；
+       色块只占 40% 宽度（右侧露卡片底色），不过分抢眼 */
+    .day-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 40%;
+      margin: 10px 30px 2px;
+      padding: 8px 18px;
+      border-radius: 999px;
+      background: var(--hero-a);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .3px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+    }
+    .day-header::before {
+      content: "";
+      width: 4px;
+      height: 16px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, .55);
+    }
+    .day-header .offset-tag {
+      padding: 1px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .22);
+      border: 1px solid rgba(255, 255, 255, .28);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    /* 折叠行（连续空日摘要）：日期与普通日期头同款（渐变底白字），无时间轴；
+       「全站无占用」紧跟日期后左对齐 */
+    .day-header.collapsed {
+      font-size: 13px;
+    }
+    .day-header .collapsed-note {
+      padding: 1px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .20);
+      border: 1px solid rgba(255, 255, 255, .28);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .5px;
+    }
+    /* 房间行：左列只放琴房名（突出），空行更矮 */
+    .row {
+      min-height: 40px;
+      border-top: 1px solid var(--row-border);
+      grid-template-columns: 150px 1fr;
+      display: grid;
+    }
     .row.alt { background: var(--row-alt); }
+    .row.has-blocks { min-height: 54px; }
     .row-label {
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding-right: 14px;
+      padding: 0 12px 0 24px;
     }
-    .row-label strong { font-size: 14.5px; font-weight: 700; }
-    .row-label span { margin-top: 3px; color: var(--text-muted); font-size: 12.5px; }
+    .row-label strong { font-size: 15px; font-weight: 700; }
+    .row-label span { margin-top: 3px; color: var(--text-muted); font-size: 12px; }
     .track {
-      min-height: 72px;
+      min-height: 40px;
       background-image:
         linear-gradient(to right, var(--track-line-strong) 1px, transparent 1px),
         linear-gradient(to right, var(--track-line-weak) 1px, transparent 1px);
       background-position: left top;
       background-size: 6.25% 100%, 3.125% 100%;
     }
-    /* ── 占用块：扁平 + 柔和渐变 + 细描边 ── */
+    /* ── 占用块：浅色柔和底 + 主题色文字（白天黑字 / 夜晚白字）── */
     .block {
       position: absolute;
-      top: 11px;
+      top: 7px;
       left: 0;
       min-width: 3px;
-      min-height: 50px;
-      padding: 6px 9px 20px;
+      min-height: 40px;
+      padding: 5px 9px 18px;
       border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, .22);
-      color: #fff;
-      box-shadow: 0 2px 6px rgba(31, 45, 80, .14);
+      border: 1px solid var(--block-border);
+      color: var(--block-text);
+      box-shadow: 0 2px 6px var(--block-shadow);
+      container-type: inline-size;
     }
-    .block.reservation { background: linear-gradient(135deg, #5b7cf9 0%, #4b5fd6 100%); }
-    .block.routine    { background: linear-gradient(135deg, #ffb45e 0%, #f08a2e 100%); }
-    .block.lock       { background: linear-gradient(135deg, #a882f5 0%, #8050d8 100%); }
-    .block.free       { background: linear-gradient(135deg, #5fd6a4 0%, #35b97f 100%); }
+    /* 窄块（半小时等，宽度不足以显示时间）只显示名字，不显示时间。
+       阈值按 content 宽度：1 小时块约 79px 显示时间，半小时约 30px 隐藏 */
+    @container (max-width: 60px) {
+      .block .time { display: none; }
+      .block { padding-bottom: 5px; }
+    }
+    .block.reservation { background: var(--block-reservation); }
+    .block.routine    { background: var(--block-routine); }
+    .block.lock       { background: var(--block-lock); }
+    .block.free       { background: var(--block-free); }
     /* 内容名：固定 13px，允许换行，不省略 */
     .block .name {
       display: block;
@@ -176,14 +253,14 @@
       line-height: 1.35;
       overflow-wrap: break-word;
     }
-    /* 时间：固定 11px，固定在块底部左下角 */
+    /* 时间：固定 11px，固定在块底部左下角；颜色跟随主题 */
     .block .time {
       position: absolute;
       bottom: 5px;
       left: 9px;
       right: 9px;
       font-size: 11px;
-      opacity: .92;
+      color: var(--block-muted);
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
@@ -234,29 +311,43 @@
           {% endfor %}
         </div>
       </div>
+      {# 日期分组：同一日期只显示一次分组头，下面逐房间；折叠行用同款日期样式 #}
+      {% set ns = namespace(prev_date=None) %}
       {% for row in rows %}
-        <div class="row{% if row.day_alt %} alt{% endif %}">
-          <div class="row-label">
-            <strong>{{ row.date_label }}{% if row.offset is not none %}（+{{ row.offset }}）{% endif %}</strong>
-            <span>{{ row.room }}</span>
+        {% if row.collapsed %}
+          <div class="day-header collapsed">
+            {{ row.date_label }}
+            <span class="collapsed-note">全站无占用</span>
           </div>
-          <div class="track"
-               style="background-size: {{ hour_grid }}% 100%, {{ half_hour_grid }}% 100%">
-            {% if not row.blocks %}
-              <span class="empty">{% if mode == "schedule" %}暂无占用{% else %}无空闲时段{% endif %}</span>
-            {% endif %}
-            {% for block in row.blocks %}
-              <div class="block {{ block.kind }}"
-                   style="left: {{ block.left }}%; width: {{ block.width }}%">
-                <div class="name">{{ block.label }}</div>
-                <div class="time">{{ block.time }}</div>
-              </div>
-            {% endfor %}
+        {% else %}
+          {% if row.date != ns.prev_date %}
+            {% set ns.prev_date = row.date %}
+            <div class="day-header">
+              {{ row.date_label }}{% if row.offset is not none %}<span class="offset-tag">+{{ row.offset }}</span>{% endif %}
+            </div>
+          {% endif %}
+          <div class="row{% if row.day_alt %} alt{% endif %}{% if row.blocks %} has-blocks{% endif %}">
+            <div class="row-label">
+              <strong>{{ row.room }}</strong>
+            </div>
+            <div class="track"
+                 style="background-size: {{ hour_grid }}% 100%, {{ half_hour_grid }}% 100%">
+              {% if not row.blocks %}
+                <span class="empty">{% if mode == "schedule" %}暂无占用{% else %}无空闲时段{% endif %}</span>
+              {% endif %}
+              {% for block in row.blocks %}
+                <div class="block {{ block.kind }}"
+                     style="left: {{ block.left }}%; width: {{ block.width }}%">
+                  <div class="name">{{ block.label }}</div>
+                  <div class="time">{{ block.time }}</div>
+                </div>
+              {% endfor %}
+            </div>
           </div>
-        </div>
+        {% endif %}
       {% endfor %}
     </div>
-    <div class="footer">半小时为最小预约单位 · 查询生成时间以机器人收到指令为准</div>
+    <div class="footer">半小时为最小预约单位 · {{ generated_at }} 最后生成</div>
   </main>
 </body>
 </html>
