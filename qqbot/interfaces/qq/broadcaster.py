@@ -91,15 +91,17 @@ class ProactiveSender:
         result: OperationResult,
         renderer: ScheduleImageRenderer | None,
         presenter: Any,
+        config: SiteConfig | None = None,
     ) -> int:
         """定时查询播报：图片优先；渲染器不可用或渲染失败时回退同一结果的文字呈示。
 
         手册要求：图片链路任何一步失败都必须保留文字回退。
+        config：共享渲染器时传入本站点配置（render 用它生成对应站点的图）。
         """
 
         if renderer is not None and renderer.available:
             try:
-                content = await renderer.render(result)
+                content = await renderer.render(result, config=config)
                 return await self.send_image(bot_id, content)
             except Exception:
                 logger.exception("定时播报图片渲染失败 bot_id=%s，回退文字", bot_id)
@@ -137,7 +139,7 @@ class RoutineBroadcastJob:
         days = self.config.routine_broadcast.days
         result = self.application.routine_schedule(start, days)
         return await self.sender.send_schedule_image(
-            self.config.bot_id, result, self.renderer, self.presenter
+            self.config.bot_id, result, self.renderer, self.presenter, config=self.config
         )
 
 
@@ -192,5 +194,5 @@ class SilentEndReportJob:
         now = now or datetime.now(SHANGHAI_TZ)
         result = self.application.daily_schedule(self.target_date(now))
         return await self.sender.send_schedule_image(
-            self.config.bot_id, result, self.renderer, self.presenter
+            self.config.bot_id, result, self.renderer, self.presenter, config=self.config
         )

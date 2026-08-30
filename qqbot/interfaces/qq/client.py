@@ -86,15 +86,15 @@ class PianoBotClient(botpy.Client):
             for bot_id, repository in self.repositories.items()
         }
         self.presenters = {bot_id: QQPresenter(config) for bot_id, config in configs.items()}
-        self.renderers = (
-            renderers
-            if renderers is not None
-            else {
-                bot_id: ScheduleImageRenderer(config)
-                for bot_id, config in configs.items()
-                if config.query.image_enabled
-            }
-        )
+        # 共享单个 ScheduleImageRenderer：Browser/字体/模板与站点无关，
+        # 各站点渲染时传自己的 config（render(result, config)）——省 2/3 浏览器内存。
+        # renderers 参数兼容旧 dict（取其一），缺省按 image_enabled 创建一个。
+        if renderers:
+            self.renderer: ScheduleImageRenderer | None = next(iter(renderers.values()))
+        elif any(cfg.query.image_enabled for cfg in configs.values()):
+            self.renderer = ScheduleImageRenderer(next(iter(configs.values())))
+        else:
+            self.renderer = None
         self.group_bindings = GroupBindingStore(control_db)
         self.group_bindings.initialize()
         imported = self.group_bindings.import_legacy_json(control_db.parent.parent / "group_mappings.json")
@@ -150,11 +150,11 @@ class PianoBotClient(botpy.Client):
 
     async def on_ready(self) -> None:
         logger.info("QQ 琴房机器人已连接；已加载配置：%s", ", ".join(self.configs))
-        for bot_id, renderer in self.renderers.items():
+        if self.renderer is not None:
             try:
-                await renderer.start()
+                await self.renderer.start()
             except Exception:
-                logger.exception("站点 %s 的查询图片渲染器启动失败，将使用文字结果", bot_id)
+                logger.exception("查询图片渲染器启动失败，将使用文字结果")
         if self.scheduler is None:
             self.scheduler = AsyncIOScheduler(timezone=SHANGHAI_TZ)
             self.scheduler.add_job(
@@ -190,9 +190,9 @@ class PianoBotClient(botpy.Client):
             self.scheduler.start()
 
     async def close(self) -> None:
-        for renderer in self.renderers.values():
+        if self.renderer is not None:
             try:
-                await renderer.close()
+                await self.renderer.close()
             except Exception:
                 logger.exception("关闭查询图片渲染器失败")
         if self.scheduler is not None and self.scheduler.running:
@@ -244,7 +244,7 @@ class PianoBotClient(botpy.Client):
         sender = ProactiveSender(self.api, self.group_bindings)
         for bot_id, config in self.configs.items():
             application = self.dispatchers[bot_id].application
-            renderer = self.renderers.get(bot_id)
+            renderer = self.renderer
             presenter = self.presenters[bot_id]
 
             if config.features.broadcast and config.features.weekly_routine:
@@ -314,12 +314,12 @@ class PianoBotClient(botpy.Client):
 
     async def _render_for_cache(self, bot_id: str, result: OperationResult, theme: str) -> bytes | None:
         """预渲染任务用的渲染函数：串行化（弱 CPU 避免并发抢资源），失败返回 None。"""
-        renderer = self.renderers.get(bot_id)
+        renderer = self.renderer
         if renderer is None or not renderer.available:
             return None
         async with self._render_lock:
             try:
-                return await renderer.render(result)
+                return await renderer.render(result, config=self.configs[bot_id])
             except Exception:
                 logger.exception("预渲染渲染失败 bot_id=%s", bot_id)
                 return None
@@ -331,7 +331,7 @@ class PianoBotClient(botpy.Client):
         result: OperationResult,
         request_id: str,
     ) -> None:
-        renderer = self.renderers.get(bot_id)
+        renderer = self.renderer
         if (
             result.code in QUERY_CODES
             and renderer is not None
@@ -387,10 +387,10 @@ class PianoBotClient(botpy.Client):
                 return entry.png
 
         # ③ 实时渲染（现状兜底），成功后回填缓存（下次同范围命中）
-        renderer = self.renderers.get(bot_id)
+        renderer = self.renderer
         if renderer is None or not renderer.available:
             return None
-        image = await renderer.render(result)
+        image = await renderer.render(result, config=self.configs[bot_id])
         self.image_cache.put(bot_id, mode, date_range, room_ids, theme, image)
         self.image_cache.record_hit(bot_id, "render")
         return image

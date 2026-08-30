@@ -178,16 +178,12 @@ def build_timeline_view(config: SiteConfig, result: OperationResult) -> dict[str
 class ScheduleImageRenderer:
     """用本地 HTML 模板生成时间轴 PNG；浏览器不可用时由调用方回退文字。
 
-    字体加载（性能优化，2026-08-30）：模板里的 ``@font-face`` 引用虚拟域名
-    ``http://fonts.local/*.woff2``，渲染时由 Playwright ``page.route`` 拦截该
-    请求、直接从本地字体文件返回（启动时读入内存缓存）。相比把 woff2 base64
-    内联进 HTML（~3MB，每次渲染解析开销 ~400ms），HTML 保持 ~13KB，渲染从
-    ~630ms 降到 ~170ms。字体缺失时 route 直接 abort，浏览器回退系统字体。
+    **共享浏览器**：多个站点可共用一个实例（browser 与 config 无关），
+    渲染时传入各站点自己的 config（``render(result, config)``）——
+    只需一个 Chromium 常驻，省内存（原每站点一个 Browser）。
     """
 
-    FONT_URL_PREFIX = "http://fonts.local/"
-
-    def __init__(self, config: SiteConfig, template_dir: Path | None = None) -> None:
+    def __init__(self, config: SiteConfig | None = None, template_dir: Path | None = None) -> None:
         self.config = config
         templates = template_dir or Path(__file__).with_name("templates")
         self.environment = Environment(
@@ -198,6 +194,8 @@ class ScheduleImageRenderer:
         self._font_bytes: dict[str, bytes] = self._load_fonts(templates / "fonts")
         self._playwright: Any = None
         self._browser: Any = None
+
+    FONT_URL_PREFIX = "http://fonts.local/"
 
     @staticmethod
     def _load_fonts(font_dir: Path) -> dict[str, bytes]:
@@ -224,8 +222,11 @@ class ScheduleImageRenderer:
     def available(self) -> bool:
         return self._browser is not None
 
-    def render_html(self, result: OperationResult, theme: str | None = None) -> str:
-        view = build_timeline_view(self.config, result)
+    def render_html(
+        self, result: OperationResult, theme: str | None = None, config: SiteConfig | None = None
+    ) -> str:
+        config = config or self.config
+        view = build_timeline_view(config, result)
         view["theme"] = theme or current_theme()
         view["generated_at"] = datetime.now(SHANGHAI_TZ).strftime("%m-%d %H:%M")
         return self.template.render(**view)
@@ -247,10 +248,10 @@ class ScheduleImageRenderer:
         self._playwright = runtime
         self._browser = browser
 
-    async def render(self, result: OperationResult) -> bytes:
+    async def render(self, result: OperationResult, config: SiteConfig | None = None) -> bytes:
         if not self.available:
             raise RuntimeError("图片渲染器尚未启动")
-        html = self.render_html(result)
+        html = self.render_html(result, config=config)
         row_count = max(1, len(result.data["days"]) * len(result.data["room_ids"]))
         page = await self._browser.new_page(
             viewport={"width": 1820, "height": min(16000, 260 + row_count * 62)},

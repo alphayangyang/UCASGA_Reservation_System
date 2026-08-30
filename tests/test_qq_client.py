@@ -60,7 +60,7 @@ class FakeRenderer:
     def __init__(self) -> None:
         self.results: list[OperationResult] = []
 
-    async def render(self, result: OperationResult) -> bytes:
+    async def render(self, result: OperationResult, config=None) -> bytes:
         self.results.append(result)
         return b"png"
 
