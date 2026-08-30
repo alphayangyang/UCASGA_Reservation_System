@@ -110,7 +110,11 @@ async def main() -> None:
                     viewport={"width": 1280, "height": min(16000, 260 + row_count * 78)},
                     device_scale_factor=1.5,
                 )
+                # 与 ScheduleImageRenderer.render 一致：先注册字体 route，再加载页面并
+                # 等待字体加载完成，否则虚拟 URL 字体请求失败 → 豆腐块
+                await page.route(f"{renderer.FONT_URL_PREFIX}**", renderer._serve_font)
                 await page.set_content(html, wait_until="load")
+                await page.evaluate("document.fonts.ready")
                 await ScheduleImageRenderer._fit_row_heights(page)
                 png = await page.locator("#schedule").screenshot(type="png")
                 await page.close()

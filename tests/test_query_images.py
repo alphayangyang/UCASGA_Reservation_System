@@ -119,13 +119,24 @@ def test_timeline_day_rows_alternate_by_date(yql_config) -> None:
     assert [row["day_alt"] for row in three_view["rows"]] == [False, True, False]
 
 
-def test_renderer_inlines_woff2_fonts(yql_config) -> None:
-    """字体以 data URI 内联进 HTML，无系统字体服务器也能渲染中文。"""
+def test_renderer_fonts_loaded_via_virtual_url(yql_config) -> None:
+    """字体不内联进 HTML（3MB → 13KB 提速）；模板引用虚拟 URL，渲染时 route 返回。
+
+    HTML 保持小体积；字体由 _load_fonts 读入内存（font_400/font_700），
+    无系统字体的服务器也能渲染中文。
+    """
     renderer = ScheduleImageRenderer(yql_config)
     html = renderer.render_html(schedule_result(), theme="light")
 
-    assert "data:font/woff2;base64," in html
+    # HTML 不再携带 base64 字体（体积保持小）
+    assert "data:font/woff2;base64," not in html
+    assert "http://fonts.local/" in html
     assert "Noto Sans SC" in html
+    # 字体已读入内存，两个字重齐全
+    assert "font_400" in renderer._font_bytes
+    assert "font_700" in renderer._font_bytes
+    assert len(renderer._font_bytes["font_400"]) > 1000
+    assert len(renderer._font_bytes["font_700"]) > 1000
 
 
 def test_text_fallback_supports_multiple_days(yql_config) -> None:
