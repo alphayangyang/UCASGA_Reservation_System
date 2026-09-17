@@ -237,10 +237,14 @@ class QQPresenter:
                 f"上限：{_hours(data['maximum_minutes'])}"
             )
         if code == "duplicate_identity":
-            label = "姓名" if data.get("field") == "display_name" else "学号"
-            return f"❌ 绑定失败：该{label}已被其他用户绑定。"
+            if data.get("field") == "display_name":
+                return (
+                    "❌ 绑定失败：该姓名已被其他用户绑定。\n"
+                    "请加上姓氏或首字母区分（例：John → John Smith）。"
+                )
+            return "❌ 绑定失败：该学号已被其他用户绑定。"
         if code == "invalid_name":
-            return "❌ 姓名须为 1～10 个汉字。"
+            return "❌ 姓名格式不正确：1～24 个字符，支持中文或英文姓名（可含空格、·、-、'）。"
         if code == "invalid_student_id":
             return "❌ 学号格式不正确。请输入本科生或研究生标准学号。"
         if code == "invalid_student_year":

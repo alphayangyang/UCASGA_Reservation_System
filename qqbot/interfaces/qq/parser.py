@@ -5,9 +5,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from qqbot.domain.errors import ParseError
+from qqbot.domain.names import normalize_display_name
 
 if TYPE_CHECKING:
     from qqbot.nlu.matcher import NLUIntentMatcher
+
+# 可指定的角色名（与 configs/*.yaml 的 roles.levels 一致）。仅用于
+# 「#添加管理 姓名 [角色]」的切分消歧：姓名含空格时靠它把末段认成角色。
+ASSIGNABLE_ROLES = frozenset({"user", "admin", "owner"})
 
 TIME_TOKEN = r"[0-9:.：]+"
 RANGE_RE = re.compile(rf"^(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—－]\s*(?P<end>{TIME_TOKEN})\s*$")
@@ -144,9 +149,15 @@ class QQCommandParser:
             parts = remainder.split()
             if len(parts) < 2:
                 raise ParseError("bind")
+            # 姓名 = 末段之前的所有内容（末段是学号）。用空格连接而不是
+            # "".join——后者会把「John Smith」拼成「JohnSmith」；中文的
+            # 「张 三」由 normalize_display_name 去空格，行为不变。
             return ParsedIntent(
                 "bind_user",
-                {"display_name": "".join(parts[:-1]), "student_id": parts[-1]},
+                {
+                    "display_name": normalize_display_name(" ".join(parts[:-1])),
+                    "student_id": parts[-1],
+                },
             )
 
         if action == "查询个人":
@@ -233,11 +244,28 @@ class QQCommandParser:
             parts = remainder.split()
             if not parts:
                 raise ParseError("role")
-            if action != "添加管理" and len(parts) != 1:
-                raise ParseError("role")
+            operation = {
+                "添加管理": "assign_role",
+                "删除管理": "remove_role",
+                "转让群主": "transfer_owner",
+            }[action]
+            if action != "添加管理":
+                if len(parts) != 1:
+                    raise ParseError("role")
+                return ParsedIntent(
+                    operation,
+                    {"target_name": normalize_display_name(parts[0]), "role": None},
+                    True,
+                )
+            # 「#添加管理 姓名 [角色]」：末段是已知角色名才算角色，否则整串都当
+            # 姓名——否则「#添加管理 John Smith」会被切成人 "John" + 角色 "Smith"。
+            role = None
+            if len(parts) > 1 and parts[-1] in ASSIGNABLE_ROLES:
+                role = parts[-1]
+                parts = parts[:-1]
             return ParsedIntent(
-                {"添加管理": "assign_role", "删除管理": "remove_role", "转让群主": "transfer_owner"}[action],
-                {"target_name": parts[0], "role": parts[1] if len(parts) > 1 else None},
+                operation,
+                {"target_name": normalize_display_name(" ".join(parts)), "role": role},
                 True,
             )
 

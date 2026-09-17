@@ -245,9 +245,13 @@
     .block.routine    { background: var(--block-routine); }
     .block.lock       { background: var(--block-lock); }
     .block.free       { background: var(--block-free); }
-    /* 内容名：固定 13px，允许换行，不省略 */
+    /* 内容名：固定 13px，最多两行、超出省略——外文姓名可能很长，窄块
+       （半小时约 30px）里不限高会撑破色块并压到相邻行。 */
     .block .name {
-      display: block;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
       font-size: 13px;
       font-weight: 700;
       line-height: 1.35;

@@ -39,6 +39,7 @@ from qqbot.domain.errors import (
     PermissionDenied,
 )
 from qqbot.domain.models import DateRange, OperationResult, RequestContext, TimeRange
+from qqbot.domain.names import is_valid_display_name, normalize_display_name
 from qqbot.infrastructure.config import SiteConfig
 
 
@@ -410,9 +411,10 @@ class BookingApplication:
         )
 
     def _bind(self, context: RequestContext, command: BindUser) -> OperationResult:
-        if not (1 <= len(command.display_name) <= 10) or not re.fullmatch(
-            r"[\u4e00-\u9fff]+", command.display_name
-        ):
+        # 归一化再校验（幂等）：即使调用方绕过 parser（NLU / 未来 Web 表单），
+        # 入库的也一定是规范形式——否则「张三」与「张三 」会被当成两个人。
+        name = normalize_display_name(command.display_name)
+        if not is_valid_display_name(name):
             raise AppError("invalid_name")
         if not re.fullmatch(r"(?:\d{4}[A-Z]\d{10}|\d{15})", command.student_id):
             raise AppError("invalid_student_id")
@@ -420,11 +422,7 @@ class BookingApplication:
         current_year = self.calendar.localize(context.received_at).year
         if not (2018 <= year <= current_year):
             raise AppError("invalid_student_year", {"year": year, "maximum": current_year})
-        user = self.repository.bind_user(
-            context.identity,
-            command.display_name,
-            command.student_id,
-        )
+        user = self.repository.bind_user(context.identity, name, command.student_id)
         return OperationResult.success("user_bound", user=user)
 
 
