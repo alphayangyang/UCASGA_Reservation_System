@@ -264,7 +264,11 @@ class PreRenderScheduler:
             self.cache.put(bot_id, mode, date_range, room_ids, theme, png)
             logger.info(
                 "预渲染缓存 bot_id=%s mode=%s %s theme=%s (%d bytes)",
-                bot_id, mode, date_range, theme, len(png),
+                bot_id,
+                mode,
+                date_range,
+                theme,
+                len(png),
             )
         except Exception:
             logger.exception("预渲染失败 bot_id=%s mode=%s theme=%s", bot_id, mode, theme)

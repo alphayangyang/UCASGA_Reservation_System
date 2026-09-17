@@ -84,7 +84,7 @@ def test_valid_display_names(name: str) -> None:
     [
         ("", "空"),
         ("   ", "纯空白"),
-        ("..." , "纯符号"),
+        ("...", "纯符号"),
         ("---", "纯符号"),
         ("A" * (MAX_NAME_LENGTH + 1), "超长"),
         ("Иван", "西里尔字母（字体无字形）"),
@@ -186,9 +186,7 @@ def test_bind_accepts_relaxed_names(app_env, name: str, student_id: str) -> None
 def test_bind_normalized_name_collides_with_existing(app_env) -> None:
     """归一化在查重之前生效：「张三」已存在时「张 三」应判重名而不是新建。"""
     dispatcher, _ = app_env
-    assert dispatcher.dispatch(
-        _context("qq-a"), BindUser("张三", "2024K8009926004")
-    ).code == "user_bound"
+    assert dispatcher.dispatch(_context("qq-a"), BindUser("张三", "2024K8009926004")).code == "user_bound"
     result = dispatcher.dispatch(_context("qq-b"), BindUser("张 三", "2024K8009926005"))
     assert result.code == "duplicate_identity"
     assert result.data.get("field") == "display_name"
@@ -203,9 +201,7 @@ def test_bind_rejects_cyrillic_name(app_env) -> None:
 def test_bind_normalizes_before_persisting(app_env) -> None:
     """入库的一定是规范形式：带多余空格的姓名应能按规范名查到人。"""
     dispatcher, repo = app_env
-    result = dispatcher.dispatch(
-        _context("qq-norm"), BindUser("John   Smith ", "2024K8009926011")
-    )
+    result = dispatcher.dispatch(_context("qq-norm"), BindUser("John   Smith ", "2024K8009926011"))
     assert result.code == "user_bound"
     assert repo.user_by_name("John Smith") is not None
     assert repo.user_by_name("John   Smith") is None

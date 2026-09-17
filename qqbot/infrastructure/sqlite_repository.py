@@ -776,9 +776,7 @@ class SQLiteBookingRepository:
         # 锁定时段优先于周常：按房间分组，被锁定覆盖的周常区间当天不显示。
         locks_by_room: dict[str, list[TimeRange]] = {}
         for row in locks:
-            locks_by_room.setdefault(row["room_id"], []).append(
-                TimeRange(row["start_min"], row["end_min"])
-            )
+            locks_by_room.setdefault(row["room_id"], []).append(TimeRange(row["start_min"], row["end_min"]))
         for row in routines:
             for part in _subtract_locks(
                 TimeRange(row["start_min"], row["end_min"]),
@@ -922,9 +920,7 @@ class SQLiteBookingRepository:
                 routine_range = TimeRange(row[0], row[1])
                 intersection = routine_range.clipped_to(time_range)
                 if intersection is not None:
-                    covered.append(
-                        CoveredRoutine(row["purpose"], routine_range, intersection)
-                    )
+                    covered.append(CoveredRoutine(row["purpose"], routine_range, intersection))
             slot = LockedSlot(room_id, locked_date, time_range, label)
             conn.execute(
                 """INSERT INTO app_locked_slots

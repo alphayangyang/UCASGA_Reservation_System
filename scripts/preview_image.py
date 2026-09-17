@@ -3,6 +3,7 @@
 用法：python scripts/preview_image.py [--template DIR]
 默认同时渲染两种模板到 scripts/preview/ 目录。
 """
+
 from __future__ import annotations
 
 import argparse

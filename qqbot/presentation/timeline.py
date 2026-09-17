@@ -115,9 +115,7 @@ def build_timeline_view(config: SiteConfig, result: OperationResult) -> dict[str
 
     def day_empty(day: dict[str, Any]) -> bool:
         """schedule 模式：该天所有查询房间都无占用视为空日（可折叠）。"""
-        return mode == "schedule" and all(
-            not room_blocks(day, room_id) for room_id in room_ids
-        )
+        return mode == "schedule" and all(not room_blocks(day, room_id) for room_id in room_ids)
 
     # 空日连续段合并成一行「无占用」摘要；非空日正常逐房间展开。
     empty_run: list[dict[str, Any]] = []

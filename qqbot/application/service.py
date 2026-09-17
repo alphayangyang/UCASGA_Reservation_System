@@ -371,11 +371,7 @@ class BookingApplication:
         room_ids = [room_id] if room_id else [room.id for room in self.config.rooms]
         days = []
         for index, target in enumerate(date_range.dates()):
-            offset = (
-                first_business_offset + index
-                if first_business_offset is not None
-                else None
-            )
+            offset = first_business_offset + index if first_business_offset is not None else None
             days.append(
                 {
                     "date": target,

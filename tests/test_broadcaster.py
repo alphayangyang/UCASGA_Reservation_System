@@ -364,9 +364,7 @@ def test_client_registers_broadcast_jobs_per_features(
     assert ids["silent_end_report_yql"][2]["minute"] == 3
 
 
-def test_client_broadcast_job_times_follow_config(
-    yql_config, tmp_path: Path, monkeypatch
-) -> None:
+def test_client_broadcast_job_times_follow_config(yql_config, tmp_path: Path, monkeypatch) -> None:
     from dataclasses import replace
 
     from qqbot.infrastructure.config import RoutineBroadcastConfig

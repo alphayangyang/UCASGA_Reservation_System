@@ -32,9 +32,7 @@ def normalize_display_name(raw: str) -> str:
     """
     name = " ".join(raw.split())
     without_spaces = name.replace(" ", "")
-    if without_spaces and all(
-        _CJK_START <= ord(ch) <= _CJK_END for ch in without_spaces
-    ):
+    if without_spaces and all(_CJK_START <= ord(ch) <= _CJK_END for ch in without_spaces):
         return without_spaces
     return name
 

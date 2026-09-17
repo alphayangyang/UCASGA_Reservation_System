@@ -185,10 +185,7 @@ PHRASES: dict[str, dict[str, str]] = {
     },
     "invalid_name": {
         ZH: "❌ 姓名格式不正确：1～24 个字符，支持中文或英文姓名（可含空格、·、-、'）。",
-        EN: (
-            "❌ Invalid name format: 1–24 characters, Chinese or English "
-            "(spaces, ·, -, ' allowed)."
-        ),
+        EN: ("❌ Invalid name format: 1–24 characters, Chinese or English (spaces, ·, -, ' allowed)."),
     },
     "invalid_student_id": {
         ZH: "❌ 学号格式不正确。请输入本科生或研究生标准学号。",
@@ -322,10 +319,14 @@ class QQPresenter:
     def _routines(self, routines: list[Routine]) -> str:
         if not routines:
             return self._p("no_routines_match")
-        return self._p("routines_header") + "\n" + "\n".join(
-            f"[{self._weekday(item.weekday)}] {self._room_name(item.room_id)} "
-            f"{item.time_range.display()}（{item.purpose}）"
-            for item in routines
+        return (
+            self._p("routines_header")
+            + "\n"
+            + "\n".join(
+                f"[{self._weekday(item.weekday)}] {self._room_name(item.room_id)} "
+                f"{item.time_range.display()}（{item.purpose}）"
+                for item in routines
+            )
         )
 
     def render(self, result: OperationResult) -> str:
@@ -335,9 +336,7 @@ class QQPresenter:
             user = data["user"]
             return self._p("bound", name=user.display_name, student_id=user.student_id)
         if code in {"reservation_created", "reservation_partially_created"}:
-            title = self._p(
-                "reservation_created" if code == "reservation_created" else "reservation_partial"
-            )
+            title = self._p("reservation_created" if code == "reservation_created" else "reservation_partial")
             lines = [
                 title,
                 self._p("label_date", date=self._date(data["date"], data["offset"])),
@@ -373,9 +372,7 @@ class QQPresenter:
             )
         if code == "nothing_to_cancel":
             target = data.get("date")
-            return self._p(
-                "nothing_to_cancel", date=target.isoformat() if target else ""
-            )
+            return self._p("nothing_to_cancel", date=target.isoformat() if target else "")
         if code == "schedule":
             return self._schedule(result)
         if code == "schedule_range":
@@ -388,9 +385,13 @@ class QQPresenter:
             values = data["reservations"]
             if not values:
                 return self._p("no_personal")
-            return self._p("personal_header") + "\n" + "\n".join(
-                f"[{target.isoformat()}] {self._room_name(room_id)} {slot.display()}"
-                for target, room_id, slot in values
+            return (
+                self._p("personal_header")
+                + "\n"
+                + "\n".join(
+                    f"[{target.isoformat()}] {self._room_name(room_id)} {slot.display()}"
+                    for target, room_id, slot in values
+                )
             )
         if code == "role_assigned":
             return self._p(
@@ -403,16 +404,12 @@ class QQPresenter:
         if code == "owner_transferred":
             return self._p("owner_transferred", target=data["target"])
         if code == "admin_cancelled":
-            return self._p("admin_cancelled") + "\n" + self._slots(
-                data["slots"], include_user=True
-            )
+            return self._p("admin_cancelled") + "\n" + self._slots(data["slots"], include_user=True)
         if code == "date_cleared":
             return self._p("date_cleared", date=data["date"].isoformat(), count=data["count"])
         if code == "clear_undone":
             if data["count"]:
-                return self._p(
-                    "cleared_restored", date=data["date"].isoformat(), count=data["count"]
-                )
+                return self._p("cleared_restored", date=data["date"].isoformat(), count=data["count"])
             return self._p("nothing_to_undo")
         if code == "routine_added":
             item: Routine = data["routine"]
@@ -434,9 +431,13 @@ class QQPresenter:
             routines: list[Routine] = data["routines"]
             if not routines:
                 return self._p("broadcast_empty", date=target.isoformat())
-            return self._p("broadcast_header", date=target.isoformat()) + "\n" + "\n".join(
-                f"[{self._room_name(item.room_id)}] {item.time_range.display()}（{item.purpose}）"
-                for item in routines
+            return (
+                self._p("broadcast_header", date=target.isoformat())
+                + "\n"
+                + "\n".join(
+                    f"[{self._room_name(item.room_id)}] {item.time_range.display()}（{item.purpose}）"
+                    for item in routines
+                )
             )
         if code == "lock_added":
             text = self._p(
@@ -503,9 +504,7 @@ class QQPresenter:
                 requested=data["requested_offset"],
             )
         if code == "invalid_time_range":
-            return self._p(
-                "invalid_time_range", reason=data.get("reason") or self._p("check_input")
-            )
+            return self._p("invalid_time_range", reason=data.get("reason") or self._p("check_input"))
         if code == "daily_limit_exceeded":
             return self._p(
                 "daily_limit",
@@ -550,9 +549,7 @@ class QQPresenter:
         room = self.config.rooms[0].name
         max_offset = self.config.max_query_offset
         max_days = self.config.query.max_range_days
-        boundary = (
-            f"{self.config.business_boundary // 60:02d}:{self.config.business_boundary % 60:02d}"
-        )
+        boundary = f"{self.config.business_boundary // 60:02d}:{self.config.business_boundary % 60:02d}"
         # 命令本身是中文的（英文命令别名为可选增强），因此英文文案里原样保留指令示例
         usages: dict[str, dict[str, str]] = {
             "bind": {
@@ -651,17 +648,11 @@ class QQPresenter:
                 EN: "❌ That date is in the past — try +0 or +1 instead.",
             },
             "natural_past": {
-                ZH: (
-                    f"⏰ 现在已经过了 {boundary}，"
-                    "「今天」的时段已经结束啦～试试「明天」吧"
-                ),
+                ZH: (f"⏰ 现在已经过了 {boundary}，「今天」的时段已经结束啦～试试「明天」吧"),
                 EN: f"⏰ It is past {boundary}, so today's slots are over — try +1 (tomorrow).",
             },
             "other_person": {
-                ZH: (
-                    "❌ 小泉不能帮你操作别人的预约哦 (｡•́︿•̀｡)\n"
-                    "只能取消/预约自己的预约～"
-                ),
+                ZH: ("❌ 小泉不能帮你操作别人的预约哦 (｡•́︿•̀｡)\n只能取消/预约自己的预约～"),
                 EN: (
                     "❌ I can only manage your own reservations (｡•́︿•̀｡)\n"
                     "You can book or cancel for yourself only."
@@ -672,10 +663,7 @@ class QQPresenter:
                     "对不起，小泉现在还不能听懂哦 (´･_･`)\n"
                     "试试对我说「预约 303 7-8」或「帮我看看303有没有空」吧～"
                 ),
-                EN: (
-                    "Sorry, I didn't understand that (´･_･`)\n"
-                    "Try the commands below, e.g. /预约 303 7-8"
-                ),
+                EN: ("Sorry, I didn't understand that (´･_･`)\nTry the commands below, e.g. /预约 303 7-8"),
             },
             "help": {
                 ZH: (

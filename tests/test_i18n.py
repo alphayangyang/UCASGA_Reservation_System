@@ -80,9 +80,7 @@ def _bound_result(name: str) -> OperationResult:
 
 
 def test_presenter_defaults_to_chinese(yql_config) -> None:
-    assert QQPresenter(yql_config).render(_bound_result("张三")) == (
-        "✅ 绑定成功：张三（2024K8009926001）。"
-    )
+    assert QQPresenter(yql_config).render(_bound_result("张三")) == ("✅ 绑定成功：张三（2024K8009926001）。")
 
 
 def test_presenter_english_bound(yql_config) -> None:
@@ -120,9 +118,7 @@ def test_presenter_english_error_messages(yql_config) -> None:
         (OperationResult.failure("invalid_name"), "1–24 characters"),
         (OperationResult.failure("duplicate_identity", field="display_name"), "already taken"),
         (
-            OperationResult.failure(
-                "advance_booking_denied", maximum_offset=2, requested_offset=3
-            ),
+            OperationResult.failure("advance_booking_denied", maximum_offset=2, requested_offset=3),
             "at most +2",
         ),
         (OperationResult.failure("not_found", entity="room"), "Available rooms"),
@@ -149,12 +145,8 @@ def test_presenter_english_weekday(yql_config) -> None:
     from qqbot.domain.models import Routine
 
     routine = Routine("r1", 0, "yql-main", TimeRange(1140, 1260), "合唱团")
-    zh = QQPresenter(yql_config).render(
-        OperationResult.success("routines", routines=[routine])
-    )
-    en = QQPresenter(yql_config, lang=EN).render(
-        OperationResult.success("routines", routines=[routine])
-    )
+    zh = QQPresenter(yql_config).render(OperationResult.success("routines", routines=[routine]))
+    en = QQPresenter(yql_config, lang=EN).render(OperationResult.success("routines", routines=[routine]))
     assert "[周一]" in zh
     assert "[Mon]" in en
 
@@ -232,3 +224,34 @@ def test_chinese_commands_still_win_their_own_cases() -> None:
     parser = QQCommandParser()
     assert parser.parse("预约 303 21-22").operation == "create_reservation"
     assert parser.parse("查询个人").operation == "query_personal"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Bind John Smith 2023X1234567890",
+        "BIND John Smith 2023X1234567890",
+        "BiNd John Smith 2023X1234567890",
+        "/Bind John Smith 2023X1234567890",  # 带斜杠前缀也认
+        "  Bind John Smith 2023X1234567890  ",  # 首尾空白
+    ],
+)
+def test_english_alias_is_case_insensitive(text: str) -> None:
+    intent = QQCommandParser().parse(text)
+    assert intent.operation == "bind_user"
+    assert intent.arguments["display_name"] == "John Smith"
+
+
+@pytest.mark.parametrize(
+    ("text", "operation"),
+    [
+        ("BOOK 303 7-8", "create_reservation"),
+        ("Book 303 7-8", "create_reservation"),
+        ("bOoK 303 7-8", "create_reservation"),
+        ("My Reservations", "query_personal"),
+        ("CANCEL 303 19-21", "cancel_reservation"),
+        ("Schedule", "query_schedule"),
+    ],
+)
+def test_english_commands_ignore_case(text: str, operation: str) -> None:
+    assert QQCommandParser().parse(text).operation == operation

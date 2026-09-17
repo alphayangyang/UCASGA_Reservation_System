@@ -142,9 +142,7 @@ def test_collapsed_empty_days_only_for_schedule(yql_config) -> None:
         {"date": date(2026, 8, 12), "offset": 2, "occupancies": [], "admin_view": False},
         {"date": date(2026, 8, 13), "offset": 3, "occupancies": [], "admin_view": False},
     ]
-    result = OperationResult.success(
-        "schedule_range", date_range=period, room_ids=["yql-main"], days=days
-    )
+    result = OperationResult.success("schedule_range", date_range=period, room_ids=["yql-main"], days=days)
     view = build_timeline_view(yql_config, result)
     # 4 个连续空日全部折叠成一行
     assert len(view["rows"]) == 1

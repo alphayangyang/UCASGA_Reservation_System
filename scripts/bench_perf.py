@@ -58,9 +58,7 @@ def _aliases() -> tuple[str, ...]:
 
 def _build_parsers(aliases: tuple[str, ...]) -> tuple[QQCommandParser, QQCommandParser]:
     rule_parser = QQCommandParser(nlu=NLUIntentMatcher(room_aliases=aliases))
-    full_parser = QQCommandParser(
-        nlu=NLUIntentMatcher(model_path=MODEL_PATH, room_aliases=aliases)
-    )
+    full_parser = QQCommandParser(nlu=NLUIntentMatcher(model_path=MODEL_PATH, room_aliases=aliases))
     return rule_parser, full_parser
 
 

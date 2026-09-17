@@ -114,8 +114,9 @@ class QQCommandParser:
         # （房间 303 / 时段 21-22.5 / 偏移 +1 不区分语言），故别名映射到同一批
         # 中文规范 action，后续业务分支零改动。按 EN_COMMAND_ALIASES 的顺序匹配
         # （长的在前），保证 "my reservations" 先于 "my" 命中。admin（#）不支持别名。
+        folded = text.casefold()  # 英文别名大小写不敏感（Bind / BIND / BiNd 都认）
         for alias, canonical in EN_COMMAND_ALIASES:
-            if text.casefold().startswith(alias):
+            if folded.startswith(alias):
                 tail = text[len(alias) :]
                 # 边界：别名后必须是空白/数字/结尾，避免 "booking" 被读成 book+ing
                 if tail[:1].isalpha():
@@ -383,9 +384,7 @@ class QQCommandParser:
                     "start": match.group("start"),
                     "end": match.group("end"),
                     "date": match.group("date") or None,
-                    "purpose": (
-                        (match.group("purpose") or "临时锁定").strip() if action == "锁定" else None
-                    ),
+                    "purpose": ((match.group("purpose") or "临时锁定").strip() if action == "锁定" else None),
                 },
                 True,
             )

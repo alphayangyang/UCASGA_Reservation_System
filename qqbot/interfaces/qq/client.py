@@ -89,9 +89,7 @@ class PianoBotClient(botpy.Client):
         self.presenters = {bot_id: QQPresenter(config) for bot_id, config in configs.items()}
         # 英文用户（绑定姓名不含汉字，见 domain.names.preferred_language）单独一套呈示器。
         # 语言在构造时绑定，render() 签名不变——client 按请求用户二选一。
-        self.presenters_en = {
-            bot_id: QQPresenter(config, lang=EN) for bot_id, config in configs.items()
-        }
+        self.presenters_en = {bot_id: QQPresenter(config, lang=EN) for bot_id, config in configs.items()}
         # 共享单个 ScheduleImageRenderer：Browser/字体/模板与站点无关，
         # 各站点渲染时传自己的 config（render(result, config)）——省 2/3 浏览器内存。
         # renderers 参数兼容旧 dict（取其一），缺省按 image_enabled 创建一个。
@@ -343,11 +341,7 @@ class PianoBotClient(botpy.Client):
         lang: str = ZH,
     ) -> None:
         renderer = self.renderer
-        if (
-            result.code in QUERY_CODES
-            and renderer is not None
-            and renderer.available
-        ):
+        if result.code in QUERY_CODES and renderer is not None and renderer.available:
             try:
                 image = await self._image_for_result(bot_id, result)
                 if image is not None:
