@@ -19,6 +19,7 @@ from qqbot.application.service import BookingApplication, Dispatcher
 from qqbot.domain.calendar import SHANGHAI_TZ
 from qqbot.domain.errors import AppError
 from qqbot.domain.models import ExternalIdentity, OperationResult, RequestContext
+from qqbot.domain.names import preferred_language
 from qqbot.infrastructure.config import SiteConfig, load_all_configs
 from qqbot.infrastructure.group_bindings import GroupBindingStore
 from qqbot.infrastructure.sqlite_repository import SQLiteBookingRepository
@@ -30,7 +31,7 @@ from qqbot.interfaces.qq.broadcaster import (
 )
 from qqbot.interfaces.qq.media_uploader import QQMediaUploader
 from qqbot.interfaces.qq.parser import ParsedIntent, QQCommandParser
-from qqbot.interfaces.qq.presenter import QQPresenter
+from qqbot.interfaces.qq.presenter import EN, ZH, QQPresenter
 from qqbot.nlu import NLU_DATA_DIR, NLUIntentMatcher, mask_sensitive, run_nightly_job, write_pending
 from qqbot.presentation.image_cache import MUTATING_CODES, QUERY_CODES, ImageCache, PreRenderScheduler
 from qqbot.presentation.timeline import ScheduleImageRenderer, current_theme
@@ -86,6 +87,11 @@ class PianoBotClient(botpy.Client):
             for bot_id, repository in self.repositories.items()
         }
         self.presenters = {bot_id: QQPresenter(config) for bot_id, config in configs.items()}
+        # 英文用户（绑定姓名不含汉字，见 domain.names.preferred_language）单独一套呈示器。
+        # 语言在构造时绑定，render() 签名不变——client 按请求用户二选一。
+        self.presenters_en = {
+            bot_id: QQPresenter(config, lang=EN) for bot_id, config in configs.items()
+        }
         # 共享单个 ScheduleImageRenderer：Browser/字体/模板与站点无关，
         # 各站点渲染时传自己的 config（render(result, config)）——省 2/3 浏览器内存。
         # renderers 参数兼容旧 dict（取其一），缺省按 image_enabled 创建一个。
@@ -305,6 +311,10 @@ class PianoBotClient(botpy.Client):
             content=content,
         )
 
+    def _presenter(self, bot_id: str, lang: str) -> QQPresenter:
+        """按请求用户的语言选呈示器（英文用户姓名不含汉字，见 preferred_language）。"""
+        return self.presenters_en[bot_id] if lang == EN else self.presenters[bot_id]
+
     def _site_context(self, bot_id: str) -> Any:
         """预渲染上下文：站点 config + application（ImageCache 需要）。"""
         return SimpleNamespace(
@@ -330,6 +340,7 @@ class PianoBotClient(botpy.Client):
         bot_id: str,
         result: OperationResult,
         request_id: str,
+        lang: str = ZH,
     ) -> None:
         renderer = self.renderer
         if (
@@ -358,7 +369,7 @@ class PianoBotClient(botpy.Client):
                     request_id,
                     bot_id,
                 )
-        await self._send(message, self.presenters[bot_id].render(result))
+        await self._send(message, self._presenter(bot_id, lang).render(result))
 
     async def _image_for_result(self, bot_id: str, result: OperationResult) -> bytes | None:
         """查询图片来源：优先缓存（命中+revision 匹配），其次等待在途渲染，最后实时渲染回填。"""
@@ -437,7 +448,13 @@ class PianoBotClient(botpy.Client):
             if not normalized.startswith("#"):
                 write_pending(self._nlu_dir, normalized, bot_id)
             result = OperationResult.failure(exc.code, **exc.details)
-            await self._send(message, self.presenters[bot_id].render(result))
+            user = self.repositories[bot_id].user_by_external(identity)
+            await self._send(
+                message,
+                self._presenter(bot_id, preferred_language(user.display_name if user else None)).render(
+                    result
+                ),
+            )
             return
 
         if intent.operation == "bind_config":
@@ -451,6 +468,8 @@ class PianoBotClient(botpy.Client):
         repository = self.repositories[bot_id]
         now = datetime.now(SHANGHAI_TZ)
         user = repository.user_by_external(identity)
+        # 呈示语言：按绑定姓名判定（英文姓名 → 英文回执与图片）。未绑定回落中文。
+        lang = preferred_language(user.display_name if user else None)
 
         # 管理员手动刷新图片：作废缓存 + 立即预渲染（应急/纠错用）
         if intent.operation == "refresh_images":
@@ -519,7 +538,7 @@ class PianoBotClient(botpy.Client):
         # 再发送正常结果（图片或文字），保证用户知道「没完全听懂」。
         if intent.hint and result.ok:
             await self._send(message, intent.hint)
-        await self._send_result(message, bot_id, result, context.request_id)
+        await self._send_result(message, bot_id, result, context.request_id, lang=lang)
 
 
 def run_bot(project_root: str | Path) -> None:

@@ -60,3 +60,36 @@ def is_valid_display_name(name: str) -> bool:
     # 走到这里说明每个字符都是符号或合法字母——再要求至少一个字母/汉字，
     # 挡住「...」「-」这类纯符号姓名。
     return any(ch not in NAME_SYMBOLS for ch in name)
+
+
+LANGUAGE_ZH = "zh"
+LANGUAGE_EN = "en"
+
+
+def preferred_language(name: str | None) -> str:
+    """按绑定姓名推断呈示语言：不含汉字即视为英文用户（留学生）。
+
+    用途：回执与查询图片的语言。未绑定（``None``/空）回落中文——此时用户
+    还没登记，无法判断，中文是站点默认。
+    """
+    if not name:
+        return LANGUAGE_ZH
+    if any(_CJK_START <= ord(ch) <= _CJK_END for ch in name):
+        return LANGUAGE_ZH
+    return LANGUAGE_EN
+
+
+def short_display_name(name: str, limit: int = 4) -> str:
+    """时间轴块内／列表里的姓名缩写。
+
+    中文姓名沿用既有的「只留末 ``limit`` 字」约定（短名不受影响，
+    「阿依古丽·麦麦提」→「丽·麦麦提」）；**英文姓名不按字符数截断**——
+    「John Smith」截末 4 字会变成「mith」，是无意义残片，故完整保留。
+
+    与查看者语言无关：图片是全群共用的，缩写只取决于姓名本身。
+    """
+    if not name:
+        return name
+    if any(_CJK_START <= ord(ch) <= _CJK_END for ch in name):
+        return name[-limit:]
+    return name

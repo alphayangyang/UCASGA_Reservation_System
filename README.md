@@ -434,6 +434,24 @@ sudo systemctl status qqbot
 
 不要在 QQ Client、Presenter 或 Parser 中直接执行 SQL，也不要在 Presenter 中重新判断权限。
 
+## 多语言（中文 / English）
+
+绑定姓名**不含汉字**的用户自动获得英文回执与英文命令别名，无需任何设置：
+
+```
+bind John Smith 2024K8009926001     → ✅ Bound successfully: John Smith (2024K8009926001).
+book 303 21-22                      → ✅ Booked! / Date: … / Room: 303 / Booked: 21:00-22:00
+my reservations                     → 👤 Your reservations: …
+cancel 303 21-22                    → ✅ Cancelled reservations on …
+free 303 / schedule 303 / query      → 空闲 / 占用查询
+```
+
+英文别名：`book`/`reserve`、`cancel`、`my`(`my reservations`)、`free`、`schedule`/`query`、`bind`/`register`。
+**参数语法语言中立**（房间 `303`、时段 `21-22.5`、偏移 `+1`），所以中英命令可以混用。
+
+> 查询**图片**的英文化尚未实现（当前一律中文渲染）；回执与图片都发在群里，全群可见。
+> 详见手册 5.3。
+
 ## 自然语言支持（NLU，v3.1 已落地）
 
 > 2026-08-23 起，bot 支持用自然语言预约/查询/取消/绑定，不限于 `/指令` 格式。

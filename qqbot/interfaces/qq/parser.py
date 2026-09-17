@@ -14,6 +14,23 @@ if TYPE_CHECKING:
 # 「#添加管理 姓名 [角色]」的切分消歧：姓名含空格时靠它把末段认成角色。
 ASSIGNABLE_ROLES = frozenset({"user", "admin", "owner"})
 
+# 英文命令别名 → 中文规范 action（给留学生用）。顺序即匹配优先级：长的在前，
+# 否则 "my reservations" 会被 "my" 抢先命中、把 "reservations" 当成多余参数。
+# 只翻译「动词」——房间/时段/偏移等参数语法本身语言中立，无需别名。
+EN_COMMAND_ALIASES: tuple[tuple[str, str], ...] = (
+    ("my reservations", "查询个人"),
+    ("my bookings", "查询个人"),
+    ("my", "查询个人"),
+    ("reserve", "预约"),
+    ("book", "预约"),
+    ("cancel", "取消"),
+    ("free", "空闲"),
+    ("schedule", "查询"),
+    ("query", "查询"),
+    ("register", "绑定"),
+    ("bind", "绑定"),
+)
+
 TIME_TOKEN = r"[0-9:.：]+"
 RANGE_RE = re.compile(rf"^(?P<room>.*?)\s*(?P<start>{TIME_TOKEN})\s*[-~～—－]\s*(?P<end>{TIME_TOKEN})\s*$")
 QUERY_DATE_TOKEN = r"(?:\+\d+|\d{4}-\d{2}-\d{2})"
@@ -93,6 +110,20 @@ class QQCommandParser:
 
         action, _, remainder = text.partition(" ")
         # 兼容“预约303 7-8”一类没有空格的输入。
+        # 英文命令别名（留学生用）：只翻译「动词」，参数语法本身语言中立
+        # （房间 303 / 时段 21-22.5 / 偏移 +1 不区分语言），故别名映射到同一批
+        # 中文规范 action，后续业务分支零改动。按 EN_COMMAND_ALIASES 的顺序匹配
+        # （长的在前），保证 "my reservations" 先于 "my" 命中。admin（#）不支持别名。
+        for alias, canonical in EN_COMMAND_ALIASES:
+            if text.casefold().startswith(alias):
+                tail = text[len(alias) :]
+                # 边界：别名后必须是空白/数字/结尾，避免 "booking" 被读成 book+ing
+                if tail[:1].isalpha():
+                    continue
+                action = canonical
+                remainder = tail.strip()
+                break
+
         for candidate in (
             "查询个人",
             "添加周常",

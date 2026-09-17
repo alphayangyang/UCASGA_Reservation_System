@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from qqbot.domain.calendar import SHANGHAI_TZ
 from qqbot.domain.models import Occupancy, OperationResult, TimeRange, minutes_to_text
+from qqbot.domain.names import short_display_name
 from qqbot.infrastructure.config import SiteConfig
 
 WEEKDAY_NAMES = "一二三四五六日"
@@ -30,10 +31,10 @@ def _percentage(value: int, opening: int, duration: int) -> float:
 
 def _reservation_label(item: Occupancy) -> str:
     # 类型信息由块颜色 + 图例表达（预约=蓝、周常=橙、锁定=紫），
-    # 块内只保留实际内容；预约按脱敏规则只显示名字末 4 字。
+    # 块内只保留实际内容；预约按脱敏规则缩写姓名（中文取末 4 字，外文名保留全名）。
     if item.kind in {"routine", "lock"}:
         return item.label
-    return item.label[-4:]
+    return short_display_name(item.label)
 
 
 def _block(
