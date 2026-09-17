@@ -15,15 +15,41 @@ import pytest
 
 from qqbot.domain.errors import ParseError
 from qqbot.interfaces.qq.parser import QQCommandParser
-from qqbot.nlu import NLU_DATA_DIR, NLUIntentMatcher
+from qqbot.nlu import NaiveBayesClassifier, NLUIntentMatcher
 
-MODEL_PATH = NLU_DATA_DIR / "intent_model.json"
+# 训练用小样本（内存内，零依赖）。
+# 注意：CI 是纯净检出，`qqbot/nlu/data/`（含 intent_model.json）被 .gitignore 忽略
+# ——那里没有模型。此前本测试直接加载该文件，于是 CI 一跑到 pytest 就红。
+# 这里改为在内存里训练一个最小分类器：本测试要验的是「规则通道清零 → 交给 ML
+# 裁决」这条**管线**是否通，而不是 ML 的准确率（准确率见 test_nlu_phase2）。
+TRAIN_SAMPLES = [
+    ("看看我今天约的", "query_personal"),
+    ("看看我的预约", "query_personal"),
+    ("查一下我的预约记录", "query_personal"),
+    ("我约了哪些", "query_personal"),
+    ("帮我约303明天7-8", "create_reservation"),
+    ("约304b今晚8点到9点", "create_reservation"),
+    ("取消303今天7-8", "cancel_reservation"),
+    ("把我明天的预约退了", "cancel_reservation"),
+    ("帮我看看303今天有没有人", "query_schedule"),
+    ("查一下304b明天的安排", "query_schedule"),
+    ("304b下午有空吗", "query_free"),
+    ("明天琴房有空吗", "query_free"),
+    ("我是张三 2023X1234567890", "bind_user"),
+    ("绑定 李四 2023X1234567891", "bind_user"),
+]
+
+
+def _trained_classifier() -> NaiveBayesClassifier:
+    classifier = NaiveBayesClassifier(threshold=0.0)
+    classifier.fit([(text, operation, 1.0) for text, operation in TRAIN_SAMPLES])
+    return classifier
 
 
 def _parser(*, with_ml: bool, aliases: tuple[str, ...] = ()) -> QQCommandParser:
     return QQCommandParser(
         nlu=NLUIntentMatcher(
-            model_path=MODEL_PATH if with_ml else None,
+            classifier=_trained_classifier() if with_ml else None,
             room_aliases=aliases,
         )
     )
