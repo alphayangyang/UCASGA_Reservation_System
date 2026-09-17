@@ -1648,7 +1648,18 @@ env | grep '^QQBOT_'
 3. 先添加失败测试；
 4. 实现最小改动；
 5. 补外层 Parser/Presenter/Adapter；
-6. 跑静态检查与完整测试；
+6. 跑静态检查与完整测试（**必须与 CI 完全一致，缺一步就可能把红灯推上去**）：
+
+   ```bash
+   ruff check .                          # 不是只查 qqbot/——CI 查全仓库
+   ruff format --check .                 # 最容易漏：只跑 check 不会发现格式问题
+   python -m pytest --cov=qqbot --cov-fail-under=70
+   ```
+
+   > CI 见 `.github/workflows/tests.yml`，矩阵 Python 3.11 / 3.12。
+   > 本地 python 版本较新（如 3.14）时，务必用 `uv venv --python 3.12` 再验一次，
+   > 避免「本地绿、CI 红」。
+
 7. 在生产数据库副本运行 doctor 和回归场景；
 8. 在测试群执行真实 QQ 请求；
 9. 备份生产数据；
