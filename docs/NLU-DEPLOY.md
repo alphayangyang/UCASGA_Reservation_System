@@ -36,7 +36,8 @@
 | `.env` | **追加** `DEEPSEEK_API_KEY=sk-...`（可选，不配则夜间标注不启动） |
 | `.env` | **可选** `DEEPSEEK_MODEL=deepseek-v4-flash`（默认即此；V4 系列，旧名 deepseek-chat 已停用；思考模式已在代码中显式关闭，勿自行开启以免一致性投票发散） |
 
-> ⚠️ `configs/*.yaml` 生产上可能被本地改过（owner、房间别名）——**不要用 git 覆盖**，手动合并只加 nlu_enabled（及需要的语音别名）。
+> ⚠️ `configs/*.yaml` 是**各服务器自维护的配置，已被 .gitignore 忽略**（仓库只有 `*.yaml.example` 模板，见手册 22.2）——
+> git 不会碰它，直接用编辑器改即可；新增站点才需要从模板复制。
 > 称呼前缀无需配置：client 自动注入「小泉」+ 各站点 bot_name。
 
 ### 1.3 数据文件（gitignore，必须手动拷贝）
@@ -106,8 +107,9 @@ sudo systemctl stop qqbot
 cp -r /opt/qqbot/data /tmp/data-backup-$(date +%F)
 cp /opt/qqbot/.env /tmp/env-backup-$(date +%F)
 
-# ② 更新代码（git 或拷贝；configs 手动合并，勿 git 覆盖）
-cd /opt/qqbot && git pull          # 或按 1.1 清单拷贝新文件
+# ② 更新代码（只取 qqbot/，不要把仓库的 configs/ 覆盖到线上）
+cd /opt/qqbot && git fetch origin && git checkout origin/main -- qqbot/
+# 说明：configs/*.yaml 是生产配置，已被 .gitignore 忽略；仓库只存 *.yaml.example 模板（手册 22.2）
 
 # ③ 拷贝 NLU 数据
 scp -r qqbot/nlu/data/ user@server:/opt/qqbot/qqbot/nlu/data/

@@ -1,18 +1,21 @@
-bot_id: zgc
-site_id: site-zgc
-bot_name: 中关村琴房
+# ⚠️ 示例配置模板（不参与运行）：仓库只保留这一份，生产配置 configs/yql.yaml 不入库。
+# 部署时复制并修改：  cp configs/yql.yaml.example configs/yql.yaml
+# 测试套件读取本文件作为基准站点配置（tests/conftest.py），改动这里会影响测试期望值。
+bot_id: yql
+site_id: site-yql
+bot_name: 玉泉路琴房
 
 credentials:
   appid_env: QQBOT_APPID
   secret_env: QQBOT_SECRET
 
 database:
-  path: data/zgc/piano_room_zgc.db
+  path: data/yql/piano_room_yql.db
 
 rooms:
-  - id: zgc-main
-    name: 中关村琴房
-    aliases: [中关村, 中关村排练室]
+  - id: yql-main
+    name: 玉泉路琴房
+    aliases: [玉泉路, 玉泉路排练室]
 
 # 群主 QQ member_openid：可填在此处，或设置环境变量 QQBOT_OWNER_EXTERNAL_ID（推荐放 .env，勿提交到仓库）。
 default_owner_external_id: ""
@@ -31,7 +34,7 @@ booking:
   max_query_offset: 2
   silent_period:
     start: "22:00"
-    end: "22:15"
+    end: "22:03"
   advance_offsets:
     user: 0
     band: 1
@@ -41,8 +44,8 @@ booking:
     regular_start: "07:00"
     rush_start: "22:00"
     regular:
-      max_single_hours: 24
-      max_daily_hours: 24
+      max_single_hours: 1.5
+      max_daily_hours: 1.5
     rush:
       max_single_hours: 1.5
       max_daily_hours: 1.5

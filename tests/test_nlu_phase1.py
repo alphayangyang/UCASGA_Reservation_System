@@ -148,7 +148,7 @@ def _write_pending(data_dir: Path, entries: list[dict[str, Any]]) -> None:
 
 def _build_configs(tmp_path: Path) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
-    yqh = load_site_config(root / "configs" / "yqh.yaml", project_root=root)
+    yqh = load_site_config(root / "configs" / "yqh.yaml.example", project_root=root)
     return {"yqh": yqh}
 
 

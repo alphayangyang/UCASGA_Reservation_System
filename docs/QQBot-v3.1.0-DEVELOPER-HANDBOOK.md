@@ -117,10 +117,11 @@ presentation → domain + config
 ```text
 QQBot-v3.1/
 ├── main.py                              # 日志配置与进程入口
-├── configs/
-│   ├── yqh.yaml                         # 雁栖湖
-│   ├── yql.yaml                         # 玉泉路
-│   └── zgc.yaml                         # 中关村
+├── configs/                             # 站点配置：生产版不入库（.gitignore），仓库只存模板
+│   ├── yqh.yaml.example                 # 雁栖湖（示例模板）
+│   ├── yql.yaml.example                 # 玉泉路（示例模板）
+│   ├── zgc.yaml.example                 # 中关村（示例模板）
+│   └── *.yaml                           # ← 各服务器自行维护，被 .gitignore 忽略（见 22.2）
 ├── qqbot/
 │   ├── domain/
 │   │   ├── calendar.py                  # 业务日
@@ -1119,7 +1120,7 @@ data/
 ├── yql/piano_room_yql.db
 └── zgc/piano_room_zgc.db
 .env
-configs/
+configs/            # 生产配置不入库（.gitignore），丢了只能从示例重建——必须备份
 group_mappings.json（若仍保留）
 ```
 
@@ -1182,6 +1183,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 
 cp .env.example .env
+cp configs/yqh.yaml.example configs/yqh.yaml     # 站点配置：从模板复制后修改（见 22.2）
 set -a
 source .env
 set +a
@@ -1197,7 +1199,36 @@ sudo .venv/bin/python -m playwright install-deps chromium
 
 安装 Browser 和启动 Bot 时，Linux 用户及 `PLAYWRIGHT_BROWSERS_PATH` 必须一致。
 
-### 22.2 前台检查
+### 22.2 站点配置管理（configs/）
+
+**生产配置不入库。** 仓库只保留 `configs/*.yaml.example` 示例模板，实际运行的
+`configs/*.yaml` 被 `.gitignore` 忽略，各服务器自行维护。
+
+理由：站点参数差异很大且会随运营调整——业务日边界、静默期、角色等级、提前预约
+额度、功能开关、房间与别名、查询默认范围……把它们放进仓库会让 `git pull` 与线上
+配置互相覆盖（历史上确实踩过），也让测试断言被线上值绑架。
+
+| 文件 | 角色 | 是否入库 |
+| --- | --- | --- |
+| `configs/<bot_id>.yaml.example` | 示例模板，也是**测试基准配置** | ✅ 入库 |
+| `configs/<bot_id>.yaml` | 该服务器的真实配置 | ❌ 被忽略 |
+
+新建站点/新服务器：
+
+```bash
+cp configs/yqh.yaml.example configs/yqh.yaml
+$EDITOR configs/yqh.yaml        # 至少改 bot_id / site_id / bot_name / database.path
+```
+
+注意事项：
+
+- `load_all_configs()` 只 glob `*.yaml`，**`.yaml.example` 不会参与运行**；
+- 测试（`tests/conftest.py` 等）读取的是 `.example`——**改模板等于改测试期望**，属预期行为；
+- `configs/` 必须纳入备份（见 21.1）：它不在版本库里，丢失只能从示例重建；
+- 更新代码时**只取 `qqbot/`**，不要把仓库里的 `configs/` 覆盖到线上：
+  `git checkout origin/main -- qqbot/`
+
+### 22.3 前台检查
 
 ```bash
 set -a
@@ -1207,7 +1238,7 @@ set +a
 .venv/bin/python main.py
 ```
 
-### 22.3 systemd
+### 22.4 systemd
 
 示例服务的关键项：
 
@@ -1228,7 +1259,7 @@ sudo systemctl status qqbot
 journalctl -u qqbot -f
 ```
 
-### 22.4 低内存服务器观察
+### 22.5 低内存服务器观察
 
 ```bash
 free -h
@@ -1237,7 +1268,7 @@ ps -eo pid,ppid,rss,cmd --sort=-rss | head -20
 
 应关注 `available`、Swap 和查询后的 Chromium 是否持续增长，不应只看 `used`。v3.1.0 常驻多个 Browser，后续若增加站点或并发查询，必须重新做内存压测。
 
-### 22.5 日志
+### 22.6 日志
 
 本地日志：`logs/qqbot.log`。
 

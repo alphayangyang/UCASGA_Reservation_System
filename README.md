@@ -54,10 +54,10 @@ Parser 不读取数据库，不取得用户身份，也不能直接写预约。�
 ```text
 .
 ├── main.py
-├── configs/
-│   ├── yqh.yaml
-│   ├── yql.yaml
-│   └── zgc.yaml
+├── configs/                    # 站点配置：仓库只存 *.yaml.example 模板，生产版不入库
+│   ├── yqh.yaml.example
+│   ├── yql.yaml.example
+│   └── zgc.yaml.example
 ├── qqbot/
 │   ├── domain/                 # 纯领域类型、命令和错误
 │   ├── application/            # Resolver、应用服务、Repository 端口
@@ -137,7 +137,7 @@ sudo .venv/bin/python -m playwright install-deps chromium
 数据库 schema 没有变化，用户身份、角色、预约数据和 `data/control.db` 中的群绑定都可直接沿用；不需要运行迁移脚本，也不需要重新执行 `/绑定` 或 `#绑定配置`。
 
 1. 停止旧 Bot；
-2. 备份原项目，至少保留 `data/`、`.env` 和改过的 `configs/`；
+2. 备份原项目，至少保留 `data/`、`.env` 和 `configs/`（生产配置**不在版本库里**，见手册 22.2）；
 3. 用 v3.1 代码替换程序文件，保留上述数据和配置；
 4. 在 `.env` 增加可选的 `PLAYWRIGHT_BROWSERS_PATH=.playwright-browsers`；
 5. 更新依赖并安装浏览器；

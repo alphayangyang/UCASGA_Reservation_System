@@ -1,3 +1,6 @@
+# ⚠️ 示例配置模板（不参与运行）：仓库只保留这一份，生产配置 configs/yqh.yaml 不入库。
+# 部署时复制并修改：  cp configs/yqh.yaml.example configs/yqh.yaml
+# 测试套件读取本文件作为基准站点配置（tests/conftest.py），改动这里会影响测试期望值。
 bot_id: yqh
 site_id: site-yqh
 bot_name: 雁栖湖琴房

@@ -16,3 +16,8 @@ dist/
 qqbot/nlu/data/
 # 开发预览产物（scripts/preview_image.py 渲染的 PNG）
 scripts/preview/
+# 站点配置：仓库只保留示例模板 configs/*.yaml.example，生产配置各服务器自行维护、不入库
+# （站点参数差异很大：业务日边界、静默期、角色等级、提前预约、功能开关……）
+configs/*.yaml
+# 本地暂存：用户调研表等含个人信息的素材（本仓库是 public，禁止入库）
+tmp/

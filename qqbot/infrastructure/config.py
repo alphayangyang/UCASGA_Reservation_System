@@ -269,12 +269,20 @@ def load_site_config(path: str | Path, project_root: str | Path | None = None) -
 
 
 def load_all_configs(config_dir: str | Path, project_root: str | Path | None = None) -> dict[str, SiteConfig]:
+    """加载目录下全部站点配置（只认 ``*.yaml``；``*.yaml.example`` 模板不参与运行）。
+
+    生产配置不入库（.gitignore），仓库只存示例模板——新服务器需先复制：
+    ``cp configs/yqh.yaml.example configs/yqh.yaml``（手册 22.2）。
+    """
+    config_dir = Path(config_dir)
     configs: dict[str, SiteConfig] = {}
-    for path in sorted(Path(config_dir).glob("*.yaml")):
+    for path in sorted(config_dir.glob("*.yaml")):
         config = load_site_config(path, project_root=project_root)
         if config.bot_id in configs:
             raise ValueError(f"重复的 bot_id：{config.bot_id}")
         configs[config.bot_id] = config
     if not configs:
-        raise RuntimeError("configs/ 中没有可用的 YAML 配置")
+        examples = sorted(p.name for p in config_dir.glob("*.yaml.example"))
+        hint = f"；发现示例模板：{'、'.join(examples)}，请先复制为 *.yaml 再修改" if examples else ""
+        raise RuntimeError(f"{config_dir}/ 中没有可用的 YAML 站点配置{hint}")
     return configs

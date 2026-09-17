@@ -30,7 +30,7 @@ def _yqh_config():
     from qqbot.infrastructure.config import load_site_config
 
     root = Path(__file__).resolve().parents[1]
-    return load_site_config(root / "configs" / "yqh.yaml", project_root=root)
+    return load_site_config(root / "configs" / "yqh.yaml.example", project_root=root)
 
 
 # —— 校验护栏 ——

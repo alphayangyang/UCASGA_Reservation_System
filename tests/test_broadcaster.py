@@ -406,7 +406,7 @@ def test_routine_broadcast_config_parsed_from_yaml() -> None:
     from qqbot.infrastructure.config import load_site_config
 
     root = Path(__file__).resolve().parents[1]
-    config = load_site_config(root / "configs" / "yqh.yaml", project_root=root)
+    config = load_site_config(root / "configs" / "yqh.yaml.example", project_root=root)
     assert config.routine_broadcast.time == 21 * 60
     assert config.routine_broadcast.days == 7
 
